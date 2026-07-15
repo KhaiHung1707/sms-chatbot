@@ -1,0 +1,33 @@
+# Fly.io config for the OBP SMS bot.
+# The bot is a long-running HTTP server (Hono) that must stay up 24/7 to receive
+# Quo webhooks — hence min_machines_running = 1 and no auto-stop.
+app = "sms-chatbot"
+primary_region = "iad"
+
+[build]
+  # Uses the repo Dockerfile (multi-stage: build → runtime, CMD node dist/index.js).
+
+[http_service]
+  # Must match the port the bot listens on. The bot reads PORT (default 3000) and
+  # the Dockerfile EXPOSEs 3000 — keep these in sync or Fly's proxy can't route.
+  internal_port = 3000
+  force_https = true
+  # Never stop the machine: an inbound SMS can arrive at any time, and a stopped
+  # machine would miss (or delay) the Quo webhook.
+  auto_start_machines = true
+  auto_stop_machines = false
+  min_machines_running = 1
+  processes = ["app"]
+
+  [[http_service.checks]]
+    # Fly health check hits the bot's /health route (returns {status:"ok"}).
+    method = "GET"
+    path = "/health"
+    interval = "30s"
+    timeout = "5s"
+    grace_period = "10s"
+
+[[vm]]
+  cpu_kind = "shared"
+  cpus = 1
+  memory = "1gb"
