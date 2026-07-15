@@ -213,6 +213,41 @@ describe('Phase 2 — auto-handoff and language', () => {
     expect(after!.status).toBe('handed_off');
   });
 
+  // Regression: after handoff, the customer's NEXT message must not revive the
+  // bot. The bug was getOpenConversation filtering status='open' (not '<>closed'),
+  // so a handed_off conversation looked absent → a fresh 'open' one was created →
+  // the bot replied over the staff member. This drives the real code path
+  // (handleMessage → getOrCreateConversation), not a direct status poke.
+  it('after handoff, a further customer message keeps bot silent (no new conversation)', async () => {
+    const llm = new ScriptedLlm([
+      { kind: 'text', text: 'Which vehicle?' },
+      { kind: 'text', text: 'SHOULD NOT SEND — staff owns this now' },
+    ]);
+    const rig = build({ llm });
+    const from = '+15105550006';
+
+    // 1. Customer opens the conversation; bot replies once.
+    await rig.pipeline.handleMessage(inbound({ from, body: 'need a bumper' }));
+    const customer = await rig.store.getCustomerByPhone(from);
+    const conv = await rig.store.getOpenConversation(customer!.id);
+    const sendsAfterFirst = rig.quo.sent.length;
+
+    // 2. Staff replies manually (outbound, unknown provider id + staff userId).
+    await rig.pipeline.handleMessage(
+      inbound({ direction: 'outgoing', from: '+15104512800', to: from, userId: 'USstaff2', body: 'I got this' }),
+    );
+    expect((await rig.store.getOpenConversation(customer!.id))!.status).toBe('handed_off');
+
+    // 3. Customer messages again → bot MUST stay silent and reuse the SAME
+    //    (handed_off) conversation, not spawn a new open one.
+    await rig.pipeline.handleMessage(inbound({ from, body: 'yes how much?' }));
+
+    expect(rig.quo.sent.length).toBe(sendsAfterFirst); // no new bot reply
+    const active = await rig.store.getOpenConversation(customer!.id);
+    expect(active!.id).toBe(conv!.id); // same conversation, not a fresh one
+    expect(active!.status).toBe('handed_off');
+  });
+
   it("bot's own outbound echo (recorded provider id) does NOT trigger handoff", async () => {
     // Primary signal: the reply's Quo id was recorded on send. When that same
     // outbound echoes back as a webhook, isBotSentProviderId matches → ignored.

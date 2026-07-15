@@ -40,10 +40,13 @@ export class PgStore implements Store {
   }
 
   async getOpenConversation(customerId: string): Promise<Conversation | null> {
+    // "Active" = not closed. This MUST include handed_off conversations, or a
+    // customer's next message would spawn a fresh 'open' conversation and the
+    // bot would resume replying over the staff member (auto-handoff bug).
     const rows = await this.sql<Conversation[]>`
       select * from conversations
       where customer_id = ${customerId}
-        and status = 'open'
+        and status <> 'closed'
         and expires_at > now()
       order by created_at desc
       limit 1`;
