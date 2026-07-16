@@ -1,0 +1,51 @@
+# Production compose for a VPS (Hostinger/Hetzner/DO).
+# Adds a Caddy reverse proxy in front of the bot for automatic HTTPS (Quo
+# requires an HTTPS webhook). Runs three services: bot (web) + cron (hold
+# expiry / TTL close-out) + caddy (TLS termination).
+#
+# Usage on the VPS:
+#   docker compose -f docker-compose.prod.yml up -d --build
+#
+# Requires a .env file (8 vars) and a DNS A record pointing your domain at the VPS.
+services:
+  bot:
+    build: .
+    restart: unless-stopped
+    env_file:
+      - .env
+    expose:
+      - "3000"            # internal only; Caddy publishes 443 → bot:3000
+    healthcheck:
+      test: ["CMD", "node", "-e", "fetch('http://localhost:3000/health').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+
+  # Hold expiry + conversation TTL close-out. THIS is what Fly/Koyeb couldn't run
+  # (single-process) — on a VPS it runs alongside the bot, so holds release at
+  # 6 PM Oakland and conversations close after TTL (auto-handoff becomes complete).
+  cron:
+    build: .
+    restart: unless-stopped
+    env_file:
+      - .env
+    command: ["node", "dist/jobs/expiry.js"]
+    depends_on:
+      - bot
+
+  caddy:
+    image: caddy:2-alpine
+    restart: unless-stopped
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data
+      - caddy_config:/config
+    depends_on:
+      - bot
+
+volumes:
+  caddy_data:
+  caddy_config:
