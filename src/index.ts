@@ -34,6 +34,8 @@ const app = new Hono();
 app.route('/', health);
 app.route('/', createWebhookRoute(config, pipeline));
 
-serve({ fetch: app.fetch, port: config.PORT }, (info) => {
+// Bind 0.0.0.0 (not the default localhost) so the container platform's proxy /
+// health check (Koyeb, Fly, Render, etc.) can reach the server from outside.
+serve({ fetch: app.fetch, port: config.PORT, hostname: '0.0.0.0' }, (info) => {
   logger.info({ port: info.port }, 'obp-sms-bot listening');
 });
