@@ -94,8 +94,9 @@ describe('integration scenarios', () => {
 
     expect(rig.quo.sent).toHaveLength(3);
     expect(rig.quo.sent[2]!.content).toContain('129.95');
-    // First-ever reply carries the opt-out notice.
-    expect(rig.quo.sent[0]!.content).toContain('STOP');
+    // Per client feedback, replies do NOT carry a "Reply STOP" notice — they
+    // should read like a natural text. STOP still works as an inbound keyword.
+    expect(rig.quo.sent[0]!.content).not.toContain('STOP');
   });
 
   // 3. STOP mid-conversation.
@@ -182,11 +183,27 @@ describe('robustness', () => {
     expect(rig.quo.sent[0]!.content).not.toMatch(/\d+\.\d{2}/);
   });
 
-  it('media-only message asks for a text description (R-08)', async () => {
+  it('media-only message asks for the part in words (R-08)', async () => {
     const rig = build({ llm: new ScriptedLlm([]) });
     await rig.pipeline.handleInbound(inbound({ hasMedia: true, body: '' }));
     expect(rig.quo.sent).toHaveLength(1);
-    expect(rig.quo.sent[0]!.content.toLowerCase()).toContain('describe');
+    // Friendly, no "call us"/"STOP"; asks for the part + vehicle.
+    const reply = rig.quo.sent[0]!.content.toLowerCase();
+    expect(reply).toContain('part');
+    expect(reply).not.toContain('stop');
+    expect(reply).not.toMatch(/call|phone/);
+  });
+
+  // Regression for Brandon's spam report: several photos (each a distinct
+  // provider_message_id) must NOT trigger a burst of identical replies. The bot
+  // asks once per conversation, then stays quiet on further photos.
+  it('multiple photos get only ONE media reply per conversation', async () => {
+    const rig = build({ llm: new ScriptedLlm([]) });
+    const from = '+15105550099';
+    await rig.pipeline.handleInbound(inbound({ from, hasMedia: true, body: '', providerMessageId: 'pic-1' }));
+    await rig.pipeline.handleInbound(inbound({ from, hasMedia: true, body: '', providerMessageId: 'pic-2' }));
+    await rig.pipeline.handleInbound(inbound({ from, hasMedia: true, body: '', providerMessageId: 'pic-3' }));
+    expect(rig.quo.sent).toHaveLength(1); // asked once, not three times
   });
 });
 

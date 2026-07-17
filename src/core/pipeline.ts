@@ -10,7 +10,7 @@ import {
   type CreateHoldInput,
   type SearchInventoryInput,
 } from '../llm/tools.js';
-import { buildSystemPrompt, OPT_OUT_NOTICE } from '../llm/systemPrompt.js';
+import { buildSystemPrompt } from '../llm/systemPrompt.js';
 import { computeHoldExpiry } from '../jobs/holdTime.js';
 import { decideIntake, detectKeyword } from './guards.js';
 import { detectLanguageHint } from './language.js';
@@ -31,12 +31,12 @@ export interface PipelineDeps {
 }
 
 const MEDIA_REPLY =
-  "I can't view photos yet — could you describe the part and your vehicle's year/make/model?";
+  "Thanks for the pic! I can't open photos here — mind telling me the part plus the year, make, and model? Happy to look it up.";
 const HELP_REPLY_TEMPLATE = (address: string) =>
-  `Oakland Body Parts — ${address}. Call us for help. Reply STOP to opt out.`;
-const STOP_REPLY = 'You have been unsubscribed. Reply HELP for contact info.';
+  `Oakland Body Parts, ${address}. Just text me the part and your vehicle and I'll help you find it.`;
+const STOP_REPLY = "You're unsubscribed and won't get more texts. Text HELP anytime if you need us.";
 const API_ERROR_REPLY =
-  "I can't look that up right now — a staff member will follow up shortly.";
+  "Sorry, I can't pull that up right this second — a team member will text you back shortly.";
 
 export class Pipeline {
   private readonly conversations: ConversationManager;
@@ -126,9 +126,20 @@ export class Pipeline {
       return;
     }
 
-    // Media-only message → ask for a text description.
+    // Media-only message → ask for a text description, but ONLY ONCE per
+    // conversation. A customer sending several photos (or Quo retrying the
+    // webhook) produced a burst of identical replies — the spam Brandon saw.
+    // Dedupe-on-insert doesn't catch it because each photo is a distinct
+    // provider_message_id, so we guard on whether we've already sent the media
+    // prompt in this conversation.
     if (decision.action === 'reply_media_unsupported') {
-      await this.reply(customer.id, customer.phone, conversation.id, MEDIA_REPLY);
+      const priorMessages = await store.getMessages(conversation.id);
+      const alreadyAsked = priorMessages.some(
+        (m) => m.direction === 'out' && m.body === MEDIA_REPLY,
+      );
+      if (!alreadyAsked && conversation.status !== 'handed_off') {
+        await this.reply(customer.id, customer.phone, conversation.id, MEDIA_REPLY);
+      }
       return;
     }
 
@@ -142,9 +153,7 @@ export class Pipeline {
     const keyword = detectKeyword(msg.body);
     if (keyword === 'stop') {
       await store.setOptedOut(customer.id, true);
-      await this.reply(customer.id, customer.phone, conversation.id, STOP_REPLY, {
-        skipOptOutNotice: true,
-      });
+      await this.reply(customer.id, customer.phone, conversation.id, STOP_REPLY);
       return;
     }
     if (keyword === 'help') {
@@ -153,7 +162,6 @@ export class Pipeline {
         customer.phone,
         conversation.id,
         HELP_REPLY_TEMPLATE(this.deps.config.SHOP_ADDRESS),
-        { skipOptOutNotice: true },
       );
       return;
     }
@@ -312,24 +320,20 @@ export class Pipeline {
   }
 
   /**
-   * Persist and send an outbound reply, appending the opt-out notice on the
-   * first ever message to this customer. The phone is threaded from intake, so
-   * no extra lookup is needed.
+   * Persist and send an outbound reply.
+   *
+   * Per client (Brandon) feedback we do NOT append "Reply STOP to opt out" to
+   * messages — it reads as robotic. STOP/HELP keywords still WORK if a customer
+   * sends them (see handleInbound), which keeps the opt-out path functional; we
+   * just don't advertise it in every message. `opts` retained for call sites.
    */
   private async reply(
-    customerId: string,
+    _customerId: string,
     phone: string,
     conversationId: string,
     body: string,
-    opts: { skipOptOutNotice?: boolean } = {},
   ): Promise<void> {
-    let text = body;
-    if (!opts.skipOptOutNotice) {
-      const priorOutbound = await this.deps.store.countOutboundToCustomer(customerId);
-      if (priorOutbound === 0) {
-        text = `${body} ${OPT_OUT_NOTICE}`.trim();
-      }
-    }
+    const text = body;
 
     // Persist first so a send failure doesn't lose the record.
     const outbound = await this.deps.store.insertOutboundMessage(conversationId, text);
