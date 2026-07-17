@@ -126,4 +126,6 @@ Các bug còn lại (C2 hold expiry, H1 send-fail, H2 empty-id, M3 validate) là
 
 **Test:** 63 pass (thêm regression: hold-after-6PM ×2, concurrent-photos ×1). typecheck sạch.
 **Còn lại chưa sửa:** L2 (audit warehouse), L3 (timeout wrapper cho llm.runTurn) — ưu tiên thấp, sau go-live.
-**Lưu ý:** advisory lock (C1) chỉ hiệu lực trên Postgres thật — cần test lại ở Level 3 với 2 hold đồng thời để xác nhận.
+**✅ C1 ĐÃ VERIFY LEVEL 3 (Postgres thật):** `scripts/verify-c1-doublebook.mjs` bắn N hold
+đồng thời vào 1 món cuối → cả 2-way lẫn 10-way đều **đúng 1 thắng, 1 active hold trong DB**.
+Advisory lock chống bán-trùng vững chắc dưới tải đồng thời cao. Dữ liệu test đã dọn khỏi Supabase.
