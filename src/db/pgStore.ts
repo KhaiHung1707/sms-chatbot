@@ -99,6 +99,10 @@ export class PgStore implements Store {
     return rows[0]!;
   }
 
+  async deleteMessage(messageId: string): Promise<void> {
+    await this.sql`delete from messages where id = ${messageId}`;
+  }
+
   async setOutboundProviderId(messageId: string, providerId: string): Promise<void> {
     await this.sql`
       update messages set provider_message_id = ${providerId}
@@ -168,6 +172,10 @@ export class PgStore implements Store {
       where conversation_id = ${conversationId}
         and result = 'found'
         and wc_product_id is not null
+        and year is not null
+        and make is not null
+        and model is not null
+        and part_type is not null
       order by created_at desc
       limit 1`;
     const row = rows[0];
@@ -186,24 +194,28 @@ export class PgStore implements Store {
   async createHoldIfAvailable(
     input: Parameters<Store['createHoldIfAvailable']>[0],
   ): Promise<{ id: string } | null> {
-    // Serialize concurrent hold attempts for the same product: the transaction
-    // reads the current active-hold sum, then inserts only if effective
-    // availability allows. Two simultaneous conversations for the last unit
-    // cannot both succeed — the second sees the first's hold and is rejected.
+    // Serialize concurrent hold attempts for the same product, then check
+    // effective availability before inserting.
     return this.sql.begin(async (tx) => {
-      // Lock the individual active-hold ROWS for this product first (FOR UPDATE
-      // is not allowed alongside an aggregate like sum()), then sum them. The
-      // row locks serialize concurrent hold attempts on the same product, so two
-      // conversations can't both reserve the last unit.
+      // A transaction-scoped ADVISORY LOCK keyed on the product is the real
+      // mutual exclusion here. Row locks (FOR UPDATE) alone do NOT protect the
+      // last-unit case: when zero active holds exist there are no rows to lock,
+      // so two concurrent transactions both read 0 held and both insert →
+      // double-booking. The advisory lock has no such gap — it serializes on the
+      // product id whether or not any hold rows exist, and auto-releases at
+      // commit/rollback. Two conversations racing for the last unit now run
+      // strictly one-after-another; the second sees the first's hold and is
+      // rejected.
+      await tx`select pg_advisory_xact_lock(${input.wcProductId})`;
+
       const held = await tx<{ qty: number }[]>`
-        select h.qty
+        select coalesce(sum(h.qty), 0)::int as qty
         from holds h
         join part_lookups pl on pl.id = h.lookup_id
         where pl.wc_product_id = ${input.wcProductId}
           and h.status = 'active'
-          and h.expires_at > now()
-        for update of h`;
-      const alreadyHeld = held.reduce((sum, r) => sum + r.qty, 0);
+          and h.expires_at > now()`;
+      const alreadyHeld = held[0]?.qty ?? 0;
       const effective = input.apiQty - alreadyHeld;
       if (effective < input.qty) return null;
 

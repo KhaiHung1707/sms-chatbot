@@ -114,6 +114,11 @@ export class MemoryStore implements Store {
     return m;
   }
 
+  async deleteMessage(messageId: string): Promise<void> {
+    const i = this.messages.findIndex((m) => m.id === messageId);
+    if (i !== -1) this.messages.splice(i, 1);
+  }
+
   async setOutboundProviderId(messageId: string, providerId: string): Promise<void> {
     const m = this.messages.find((x) => x.id === messageId && x.direction === 'out');
     if (m) m.provider_message_id = providerId;

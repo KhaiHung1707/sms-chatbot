@@ -54,7 +54,11 @@ export function decideIntake(
   return { action: 'process' };
 }
 
-/** STOP / HELP keyword detection (multilingual-tolerant, case-insensitive). */
+/**
+ * STOP / HELP keyword detection (case-insensitive). English keywords are the
+ * carrier-standard opt-out words; a few common Spanish/Vietnamese equivalents
+ * are included since the shop serves those customers.
+ */
 const STOP_KEYWORDS = new Set([
   'stop',
   'unsubscribe',
@@ -62,8 +66,15 @@ const STOP_KEYWORDS = new Set([
   'end',
   'quit',
   'stopall',
+  // Spanish
+  'alto',
+  'parar',
+  // Vietnamese
+  'dung',
+  'hủy',
+  'huy',
 ]);
-const HELP_KEYWORDS = new Set(['help', 'info']);
+const HELP_KEYWORDS = new Set(['help', 'info', 'ayuda', 'trợ giúp', 'tro giup']);
 
 export type KeywordCommand = 'stop' | 'help' | null;
 

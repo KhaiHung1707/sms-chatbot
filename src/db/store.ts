@@ -42,6 +42,14 @@ export interface Store {
   insertOutboundMessage(conversationId: string, body: string): Promise<Message>;
 
   /**
+   * Delete an outbound message row. Called when the SMS send FAILS, so an
+   * undelivered reply never re-enters the conversation history (which would make
+   * the LLM believe it already answered — "as I mentioned, $X" to a customer who
+   * received nothing).
+   */
+  deleteMessage(messageId: string): Promise<void>;
+
+  /**
    * Record the Quo message id returned when the bot sends an outbound SMS.
    * Used to tell the bot's own messages apart from staff-sent ones (C-01):
    * an outbound webhook whose provider id we recorded here is the bot's; one we

@@ -1,3 +1,4 @@
+import { z } from 'zod';
 import type Anthropic from '@anthropic-ai/sdk';
 import type { InventoryClient } from '../providers/inventory.js';
 
@@ -41,19 +42,28 @@ export const toolDefinitions: Anthropic.Tool[] = [
   },
 ];
 
-export interface SearchInventoryInput {
-  year: number;
-  make: string;
-  model: string;
-  part: string;
-}
+/**
+ * Runtime validators for tool input. The Anthropic SDK does NOT enforce a tool's
+ * input_schema, so a hallucinated or malformed tool call can arrive with missing
+ * or wrong-typed fields. Validating here stops "undefined" params reaching the
+ * inventory API (which would falsely report "not found") and blocks nonsensical
+ * hold quantities (a negative qty would otherwise always pass the availability
+ * check and reserve garbage).
+ */
+export const searchInventorySchema = z.object({
+  year: z.coerce.number().int().min(1900).max(2100),
+  make: z.string().min(1),
+  model: z.string().min(1),
+  part: z.string().min(1),
+});
 
-export interface CreateHoldInput {
-  /** Optional — the model no longer supplies this; the pipeline resolves the
-   *  product from the conversation's most recent found lookup. */
-  product_id?: number;
-  qty?: number;
-}
+export const createHoldSchema = z.object({
+  product_id: z.coerce.number().int().positive().optional(),
+  qty: z.coerce.number().int().positive().max(50).optional(),
+});
+
+export type SearchInventoryInput = z.infer<typeof searchInventorySchema>;
+export type CreateHoldInput = z.infer<typeof createHoldSchema>;
 
 /**
  * Result of executing search_inventory, shaped for the tool_result block AND

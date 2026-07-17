@@ -205,6 +205,24 @@ describe('robustness', () => {
     await rig.pipeline.handleInbound(inbound({ from, hasMedia: true, body: '', providerMessageId: 'pic-3' }));
     expect(rig.quo.sent).toHaveLength(1); // asked once, not three times
   });
+
+  // Regression (bugs H3 + M1): CONCURRENT messages from one customer must be
+  // serialized. Three photos fired without awaiting (like the webhook's parallel
+  // setImmediate) must still yield exactly ONE media reply and ONE conversation.
+  it('concurrent photos from one customer → one reply, one conversation', async () => {
+    const rig = build({ llm: new ScriptedLlm([]) });
+    const from = '+15105550088';
+    // Fire all three through handleMessage WITHOUT awaiting between them.
+    await Promise.all([
+      rig.pipeline.handleMessage(inbound({ from, direction: 'incoming', hasMedia: true, body: '', providerMessageId: 'c1' })),
+      rig.pipeline.handleMessage(inbound({ from, direction: 'incoming', hasMedia: true, body: '', providerMessageId: 'c2' })),
+      rig.pipeline.handleMessage(inbound({ from, direction: 'incoming', hasMedia: true, body: '', providerMessageId: 'c3' })),
+    ]);
+    expect(rig.quo.sent).toHaveLength(1); // per-phone lock prevented the spam burst
+    const customer = await rig.store.getCustomerByPhone(from);
+    const convCount = [...rig.store.conversations.values()].filter((c) => c.customer_id === customer!.id).length;
+    expect(convCount).toBe(1); // no split conversation
+  });
 });
 
 describe('Phase 2 — auto-handoff and language', () => {

@@ -7,7 +7,8 @@ import type { QuoClient } from '../providers/quo.js';
 import { OutOfCreditError } from '../providers/quo.js';
 import {
   executeSearchInventory,
-  type CreateHoldInput,
+  searchInventorySchema,
+  createHoldSchema,
   type SearchInventoryInput,
 } from '../llm/tools.js';
 import { buildSystemPrompt } from '../llm/systemPrompt.js';
@@ -41,11 +42,36 @@ const API_ERROR_REPLY =
 export class Pipeline {
   private readonly conversations: ConversationManager;
 
+  // Per-phone serialization. The webhook fans out concurrent setImmediate runs,
+  // so two messages from the same customer (or a Quo retry) could interleave and
+  // (a) create two open conversations, (b) both pass the media "ask once" guard,
+  // (c) reply after an opt-out that a later message set. Chaining each phone's
+  // work onto a promise makes all messages from one customer run STRICTLY in
+  // order, closing those races. Different phones still run concurrently.
+  private readonly phoneLocks = new Map<string, Promise<void>>();
+
   constructor(private readonly deps: PipelineDeps) {
     this.conversations = new ConversationManager(
       deps.store,
       deps.config.CONVERSATION_TTL_HOURS,
     );
+  }
+
+  /** Run `fn` after any in-flight work for `phone`, serializing per phone. */
+  private async withPhoneLock(phone: string, fn: () => Promise<void>): Promise<void> {
+    const prior = this.phoneLocks.get(phone) ?? Promise.resolve();
+    // Chain onto the prior work; swallow its error so one failure doesn't break
+    // the chain for subsequent messages.
+    const run = prior.catch(() => {}).then(fn);
+    this.phoneLocks.set(phone, run);
+    try {
+      await run;
+    } finally {
+      // Clean up only if we're still the tail (no newer message chained on).
+      if (this.phoneLocks.get(phone) === run) {
+        this.phoneLocks.delete(phone);
+      }
+    }
   }
 
   /**
@@ -56,11 +82,16 @@ export class Pipeline {
    * so we look up the customer by the `to` field.
    */
   async handleMessage(msg: InboundMessage): Promise<void> {
-    if (msg.direction === 'outgoing') {
-      await this.handleOutbound(msg);
-      return;
-    }
-    await this.handleInbound(msg);
+    // Serialize per customer phone: inbound → `from`, outbound → `to`. This
+    // prevents interleaving that would split conversations or double-reply.
+    const customerPhone = msg.direction === 'outgoing' ? msg.to : msg.from;
+    await this.withPhoneLock(customerPhone, async () => {
+      if (msg.direction === 'outgoing') {
+        await this.handleOutbound(msg);
+        return;
+      }
+      await this.handleInbound(msg);
+    });
   }
 
   /**
@@ -80,8 +111,18 @@ export class Pipeline {
     if (msg.providerMessageId) {
       const botSent = await this.deps.store.isBotSentProviderId(msg.providerMessageId);
       if (botSent) return; // our own reply echoing back — not a takeover
-    } else if (msg.userId === null) {
-      // No provider id AND no staff user → treat as the bot's own; ignore.
+    }
+
+    // A genuine STAFF takeover is a human replying in the Quo app, which carries
+    // a userId. If there's NO userId, this outbound is almost certainly the bot's
+    // own send whose id we failed to record (e.g. Quo returned an empty id on
+    // send — H2). Treating that as a takeover would wrongly silence the bot on a
+    // live customer, so we require a userId before handing off.
+    if (!msg.userId) {
+      logger.info(
+        { to: msg.to, id: msg.providerMessageId },
+        'outbound with no staff userId and unrecognized id — treating as bot-sent, not a takeover',
+      );
       return;
     }
 
@@ -206,6 +247,15 @@ export class Pipeline {
       reply = API_ERROR_REPLY;
     }
 
+    // Re-check opt-out right before sending (M2/TCPA): the agent turn can take
+    // seconds, during which the customer may have sent STOP. Never send a reply
+    // to someone who opted out in the meantime.
+    const current = await this.deps.store.getCustomerByPhone(phone);
+    if (current?.opted_out) {
+      logger.info({ customer: customerId }, 'customer opted out during agent turn; suppressing reply');
+      return;
+    }
+
     await this.reply(customerId, phone, conversationId, reply);
   }
 
@@ -224,7 +274,17 @@ export class Pipeline {
 
     return async (name: string, input: unknown): Promise<string> => {
       if (name === 'search_inventory') {
-        const params = input as SearchInventoryInput;
+        // Validate the model's tool input; a malformed call must not send
+        // "undefined" params to the API (which would falsely report not-found).
+        const parsed = searchInventorySchema.safeParse(input);
+        if (!parsed.success) {
+          logger.warn({ input }, 'search_inventory: invalid tool input');
+          return JSON.stringify({
+            error: 'invalid_input',
+            message: 'The vehicle details are incomplete. Ask the customer for the year, make, model, and part.',
+          });
+        }
+        const params = parsed.data;
         const exec = await executeSearchInventory(
           this.deps.inventory,
           params,
@@ -250,7 +310,14 @@ export class Pipeline {
       }
 
       if (name === 'create_hold') {
-        const params = input as CreateHoldInput;
+        // Validate: block a nonsensical qty (a negative would always pass the
+        // availability check `effective < qty` and reserve garbage).
+        const parsedHold = createHoldSchema.safeParse(input);
+        if (!parsedHold.success) {
+          logger.warn({ input }, 'create_hold: invalid tool input');
+          return JSON.stringify({ held: false, reason: 'invalid_input', message: 'Ask the customer to confirm which part and how many.' });
+        }
+        const params = parsedHold.data;
         const wantProduct = params.product_id ?? lastProductId;
 
         // The customer often confirms a hold in a SEPARATE message from the
@@ -335,7 +402,8 @@ export class Pipeline {
   ): Promise<void> {
     const text = body;
 
-    // Persist first so a send failure doesn't lose the record.
+    // Persist first so we have a row to attach the Quo id to. If the send fails,
+    // we DELETE the row (below) so an undelivered reply never re-enters history.
     const outbound = await this.deps.store.insertOutboundMessage(conversationId, text);
 
     try {
@@ -344,6 +412,15 @@ export class Pipeline {
       // recognized as bot-sent, not a staff reply (C-01 auto-handoff).
       if (sent.id) {
         await this.deps.store.setOutboundProviderId(outbound.id, sent.id);
+      } else {
+        // Quo accepted the send but returned no id. We can't recognize this
+        // message's delivery webhook as our own, so the auto-handoff check would
+        // misread it as a staff takeover and silence the bot. Log loudly; the
+        // message WAS sent, so we keep the row (don't delete), but flag the gap.
+        logger.warn(
+          { conversation: conversationId },
+          'Quo send returned no message id — delivery webhook for this reply may be misread as staff takeover',
+        );
       }
     } catch (err) {
       if (err instanceof OutOfCreditError) {
@@ -351,6 +428,9 @@ export class Pipeline {
       } else {
         logger.error({ err }, 'quo send failed');
       }
+      // H1 fix: the SMS did NOT go out. Remove the outbound row so the LLM never
+      // treats an undelivered reply as already-said on the next turn.
+      await this.deps.store.deleteMessage(outbound.id);
     }
   }
 }

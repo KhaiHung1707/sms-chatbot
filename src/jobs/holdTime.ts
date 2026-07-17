@@ -9,17 +9,28 @@
 
 /**
  * Return the UTC Date at which a hold created at `now` should expire:
- * today at `expiryHour` local time in `timeZone`. If `now` is already past
- * that hour locally, it still returns today's expiry hour (caller decides
- * whether to roll to next day; the shop rule is same-day end-of-day).
+ * `expiryHour` local time in `timeZone`, on the current shop-local day — or the
+ * NEXT day if `now` is already past that hour. A hold must never be created with
+ * an expiry in the past: a customer confirming a hold at 11 PM should get it held
+ * until 6 PM TOMORROW, otherwise the hold is dead on arrival (getActiveHoldQty
+ * filters out already-expired holds → the item stays sellable → double-booking).
  */
 export function computeHoldExpiry(now: Date, timeZone: string, expiryHour: number): Date {
   const local = getLocalParts(now, timeZone);
-  // Build the target wall-clock: today's date at expiryHour:00:00 local.
-  return zonedWallClockToUtc(
+  let expiry = zonedWallClockToUtc(
     { year: local.year, month: local.month, day: local.day, hour: expiryHour, minute: 0, second: 0 },
     timeZone,
   );
+  // Past today's cutoff → roll to the same hour on the next shop-local day.
+  if (expiry.getTime() <= now.getTime()) {
+    const nextDay = new Date(now.getTime() + 24 * 60 * 60 * 1000);
+    const nl = getLocalParts(nextDay, timeZone);
+    expiry = zonedWallClockToUtc(
+      { year: nl.year, month: nl.month, day: nl.day, hour: expiryHour, minute: 0, second: 0 },
+      timeZone,
+    );
+  }
+  return expiry;
 }
 
 interface WallClock {
