@@ -100,18 +100,29 @@ nhau (coupe vs sedan vs hybrid) → liệt kê cho khách chọn.
 
 ---
 
-## Yêu cầu #5 — Chỉ trả lời conversation "OPEN" (bỏ "DONE") 🟡
+## Yêu cầu #5 — Chỉ trả lời conversation "OPEN" (bỏ "DONE") 🟡 → ❌ KHÔNG LÀM TRỰC TIẾP ĐƯỢC
 
-Quo/OpenPhone đánh dấu conversation "DONE" = đã đóng → bot phải BỎ QUA, không
-auto-reply. Check status trước khi xử lý webhook.
+Quo/OpenPhone đánh dấu conversation "DONE" = đã đóng → mong muốn bot BỎ QUA.
 
-**Cách làm:**
-- **P1 (thám thính):** capture 1 webhook Quo thật → xem payload có field trạng thái
-  conversation (OPEN/DONE) không. Chưa verify (giống message.delivered trước đây).
-- Nếu webhook CÓ status → filter ngay trong webhook.ts trước khi xử lý.
-- Nếu webhook KHÔNG có → phải gọi Quo API hỏi status conversation (thêm 1 call).
+**✅ ĐÃ ĐIỀU TRA (2026-07-21) — kết luận: Quo API KHÔNG expose Open/Done.**
+- Webhook `message.received` chỉ có: id, from, to, direction, body, media, status
+  (status = received/delivered của TIN, KHÔNG phải Open/Done), userId, phoneNumberId,
+  **conversationId**. Không có trạng thái inbox.
+- `GET /v1/conversations` tồn tại nhưng field chỉ là: assignedTo, createdAt, deletedAt,
+  id, lastActivityAt, mutedUntil, name, participants, snoozedUntil, updatedAt.
+  **KHÔNG có field "open/done/status".**
+- `GET /v1/conversations/{id}` → **404** (không có endpoint chi tiết).
+- `?status=done` → param bị bỏ qua (không hỗ trợ lọc).
+→ **Open/Done là tính năng INBOX UI của Quo, không nằm trong API.** Bot không thể biết.
 
-**⚠️ Chưa biết Quo gửi status thế nào — P1 bắt buộc trước khi code.**
+**QUYẾT ĐỊNH (đã chốt với client): dựa vào auto-handoff sẵn có.**
+Khi nhân viên nhắn tay trong 1 cuộc (thường trước khi bấm Done), cơ chế auto-handoff
+đã khiến bot IM cho cuộc đó → che phủ phần lớn ý định của #5, KHÔNG cần code mới.
+Báo Brandon: "chỉ bỏ Done" không làm được vì giới hạn Quo API; handoff thay thế.
+
+**Nếu sau này cần chính xác hơn:** hỏi Quo support xem có webhook event khi Done, hoặc
+dùng `assignedTo`/`snoozedUntil` (gần đúng, thêm 1 API call/tin) — nhưng đều không
+đúng 100% nghĩa Done.
 
 ---
 

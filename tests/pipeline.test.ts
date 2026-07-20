@@ -130,22 +130,22 @@ describe('integration scenarios', () => {
   });
 
   // 5. Inventory API returns 500 → reply contains no numbers.
-  it('5. inventory api_error → apologetic reply with no numbers', async () => {
+  it('5. inventory api_error → bot stays SILENT (office handles it)', async () => {
+    // Silence-first (Brandon #1): when the lookup fails, the model is not certain,
+    // so it emits [[SILENT]] and the bot sends NOTHING.
     const llm = new ScriptedLlm([
       {
         kind: 'tool',
         name: 'search_inventory',
         input: { year: 1995, make: 'Honda', model: 'Accord', part: 'front bumper' },
-        // The model, seeing inventory_unavailable, must not state numbers.
-        thenText: "I can't look that up right now — a staff member will follow up.",
+        thenText: '[[SILENT]]',
       },
     ]);
     const rig = build({ llm, inventoryOutcome: { status: 'api_error', reason: 'http 500' } });
 
     await rig.pipeline.handleInbound(inbound({ body: '95 Accord front bumper yes' }));
 
-    expect(rig.quo.sent).toHaveLength(1);
-    expect(rig.quo.sent[0]!.content).not.toMatch(/\d+\.\d{2}/);
+    expect(rig.quo.sent).toHaveLength(0); // silent — nothing sent
     // The tool result handed to the model must itself contain no price.
     expect(llm.toolResults[0]).toContain('inventory_unavailable');
     expect(llm.toolResults[0]).not.toMatch(/\d+\.\d{2}/);
@@ -176,11 +176,23 @@ describe('integration scenarios', () => {
 });
 
 describe('robustness', () => {
-  it('LLM failure falls back to an apologetic reply with no numbers', async () => {
+  it('LLM failure → bot stays SILENT (no apology, office handles it)', async () => {
+    // Silence-first: an internal error is not a confident answer, so send nothing.
     const rig = build({ llm: new ThrowingLlm() });
     await rig.pipeline.handleInbound(inbound({ body: 'price for a 95 Accord bumper?' }));
-    expect(rig.quo.sent).toHaveLength(1);
-    expect(rig.quo.sent[0]!.content).not.toMatch(/\d+\.\d{2}/);
+    expect(rig.quo.sent).toHaveLength(0);
+  });
+
+  it('[[SILENT]] sentinel → bot sends nothing', async () => {
+    const rig = build({ llm: new ScriptedLlm([{ kind: 'text', text: '[[SILENT]]' }]) });
+    await rig.pipeline.handleInbound(inbound({ body: 'civic bumper' }));
+    expect(rig.quo.sent).toHaveLength(0);
+  });
+
+  it('empty reply → bot sends nothing', async () => {
+    const rig = build({ llm: new ScriptedLlm([{ kind: 'text', text: '   ' }]) });
+    await rig.pipeline.handleInbound(inbound({ body: 'hello' }));
+    expect(rig.quo.sent).toHaveLength(0);
   });
 
   it('media-only message asks for the part in words (R-08)', async () => {

@@ -36,8 +36,19 @@ const MEDIA_REPLY =
 const HELP_REPLY_TEMPLATE = (address: string) =>
   `Oakland Body Parts, ${address}. Just text me the part and your vehicle and I'll help you find it.`;
 const STOP_REPLY = "You're unsubscribed and won't get more texts. Text HELP anytime if you need us.";
-const API_ERROR_REPLY =
-  "Sorry, I can't pull that up right this second — a team member will text you back shortly.";
+
+// Silence-first (Brandon #1): the model emits this sentinel when it is not 100%
+// certain, and the pipeline sends nothing (the office replies by hand).
+const SILENT_SENTINEL = '[[SILENT]]';
+
+/** True if the agent's reply means "stay silent" — the sentinel or empty text. */
+function isSilent(reply: string): boolean {
+  const t = reply.trim();
+  if (t === '') return true;
+  // Tolerate case/whitespace variants and the sentinel appearing alone.
+  const normalized = t.toUpperCase().replace(/\s+/g, '');
+  return normalized === SILENT_SENTINEL.toUpperCase() || normalized.includes('[[SILENT]]');
+}
 
 export class Pipeline {
   private readonly conversations: ConversationManager;
@@ -241,10 +252,21 @@ export class Pipeline {
     let reply: string;
     try {
       const result = await this.deps.llm.runTurn(system, claudeHistory, executeTool);
-      reply = result.reply.trim() || API_ERROR_REPLY;
+      reply = result.reply.trim();
     } catch (err) {
-      logger.error({ err }, 'llm turn failed');
-      reply = API_ERROR_REPLY;
+      // On an internal error the bot stays SILENT (office handles it) rather than
+      // sending an apology — per the "only reply when 100% certain" rule.
+      logger.error({ err }, 'llm turn failed; staying silent');
+      return;
+    }
+
+    // SILENCE-FIRST (Brandon #1): the bot answers ONLY when 100% certain. When the
+    // model is not sure it outputs the [[SILENT]] sentinel (or nothing) — in that
+    // case we send NOTHING and leave the conversation for the office to handle by
+    // hand. This is the deliberate default: better silent than a wrong/partial reply.
+    if (isSilent(reply)) {
+      logger.info({ conversation: conversationId }, 'not confident — staying silent for office');
+      return;
     }
 
     // Re-check opt-out right before sending (M2/TCPA): the agent turn can take
