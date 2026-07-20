@@ -16,6 +16,9 @@ const inventoryItemSchema = z.object({
   title: z.string(),
   price: z.number(),
   variants: z.array(z.string()).optional().default([]),
+  // Product page URL for the "Order link" line. Optional so older plugin
+  // versions (without permalink) still validate.
+  permalink: z.string().optional().default(''),
   inventory: z.array(
     z.object({ warehouse: z.string(), qty: z.number() }),
   ),

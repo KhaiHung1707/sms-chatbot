@@ -21,7 +21,7 @@ const schema = z.object({
   DATABASE_URL: z.string().min(1),
 
   SHOP_TIMEZONE: z.string().default('America/Los_Angeles'),
-  SHOP_ADDRESS: z.string().default('1911 Union St, Oakland'),
+  SHOP_ADDRESS: z.string().default('1911 Union St, Oakland, CA 94607'),
   CONVERSATION_TTL_HOURS: z.coerce.number().int().positive().default(2),
   HOLD_EXPIRY_HOUR: z.coerce.number().int().min(0).max(23).default(18),
 

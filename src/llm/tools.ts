@@ -164,6 +164,7 @@ export async function executeSearchInventory(
         title: item.title,
         price: item.price,
         variants: item.variants,
+        permalink: item.permalink, // "Order link" in the reply template
         // Effective, hold-adjusted numbers only — the raw API qty is not exposed.
         effective_qty: effectiveQty,
         availability: band,

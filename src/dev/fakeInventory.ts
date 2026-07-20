@@ -18,6 +18,7 @@ const CATALOG: Array<InventoryItem & { year: number; make: string; model: string
     product_id: 48213, sku: 'HO1000123',
     title: 'Front Bumper Cover — 1995-97 Honda Accord',
     price: 129.95, variants: ['black', 'primed', 'painted'],
+    permalink: 'https://oaklandbodyparts.com/product/ho1000123',
     inventory: [{ warehouse: 'US', qty: 4 }], // in_stock
   },
   {
@@ -25,6 +26,7 @@ const CATALOG: Array<InventoryItem & { year: number; make: string; model: string
     product_id: 48990, sku: 'HO1000550',
     title: 'Left Side Mirror — 1996-00 Honda Civic',
     price: 42.5, variants: [],
+    permalink: 'https://oaklandbodyparts.com/product/ho1000550',
     inventory: [{ warehouse: 'US', qty: 1 }], // low
   },
   {
@@ -32,6 +34,7 @@ const CATALOG: Array<InventoryItem & { year: number; make: string; model: string
     product_id: 51002, sku: 'TO2000777',
     title: 'Tail Light Assembly — 2002-06 Toyota Camry',
     price: 88.0, variants: [],
+    permalink: 'https://oaklandbodyparts.com/product/to2000777',
     inventory: [{ warehouse: 'US', qty: 0 }], // out
   },
 ];

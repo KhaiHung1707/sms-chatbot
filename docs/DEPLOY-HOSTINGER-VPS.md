@@ -16,7 +16,10 @@
 1. Hostinger → **VPS** → gói **KVM 1** (~$5-8/th, 4GB RAM — thừa cho bot)
 2. Chọn **OS: Ubuntu 24.04** (có sẵn template)
 3. Region: **US** (gần Oakland + gần server website)
-4. Ghi lại **IP VPS** + mật khẩu root (hoặc SSH key)
+4. Ghi lại **IP VPS** + mật khẩu root (hoặc SSH key) — LƯU RIÊNG, không dán vào file trong repo.
+
+> ⚠️ KHÔNG dán mật khẩu root/SSH vào bất kỳ file nào trong repo — repo push lên
+> GitHub thì lộ. Giữ credential trong trình quản lý mật khẩu.
 
 ## Bước 1 — SSH vào VPS + cài Docker
 
