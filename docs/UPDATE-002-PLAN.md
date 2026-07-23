@@ -6,7 +6,18 @@
 
 ---
 
-## Yêu cầu #1 — Chỉ trả lời khi CHẮC CHẮN 100%, không thì IM 🔴
+## ⚠️ CẬP NHẬT #1 (2026-07-22): 100%→80%, IM→HỎI LẠI
+
+Brandon đổi hướng: "Please change 100% to just 80%. And it should ask follow up
+questions." → Bot giờ:
+- Trả lời khi **~80%+ tự tin** (không cần 100%).
+- **Thiếu tin / mơ hồ → HỎI LẠI** (year? front/rear? Coupe/Sedan?), KHÔNG im.
+- **Chỉ IM khi office đã tiếp quản** (handoff). Ngoài ra luôn hữu ích.
+- Gộp luôn #4: model mơ hồ → hỏi trim (không còn là ngoại lệ, mà là mặc định).
+Verified thật: "civic bumper"→hỏi năm+front/rear; "2007 civic front bumper"→hỏi
+loại; "hi"→chào thân thiện. (Phần mô tả cũ "im 100%" bên dưới đã bị thay thế.)
+
+## [CŨ — đã thay thế] Yêu cầu #1 — Chỉ trả lời khi CHẮC CHẮN 100%, không thì IM 🔴
 
 **Triết lý mới:** SMS ≠ chat. Bot **mặc định KHÔNG trả lời**; chỉ trả lời khi chắc
 chắn tuyệt đối. Không chắc → im lặng, để office trả lời thủ công. (Đã chốt: im HOÀN

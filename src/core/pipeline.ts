@@ -37,8 +37,9 @@ const HELP_REPLY_TEMPLATE = (address: string) =>
   `Oakland Body Parts, ${address}. Just text me the part and your vehicle and I'll help you find it.`;
 const STOP_REPLY = "You're unsubscribed and won't get more texts. Text HELP anytime if you need us.";
 
-// Silence-first (Brandon #1): the model emits this sentinel when it is not 100%
-// certain, and the pipeline sends nothing (the office replies by hand).
+// The model emits this sentinel only when the office has taken over (or there is
+// truly nothing helpful to say/ask). The bot is helpful by default — it answers
+// at ~80%+ confidence and asks follow-ups otherwise; silence is the exception.
 const SILENT_SENTINEL = '[[SILENT]]';
 
 /** True if the agent's reply means "stay silent" — the sentinel or empty text. */
@@ -254,18 +255,18 @@ export class Pipeline {
       const result = await this.deps.llm.runTurn(system, claudeHistory, executeTool);
       reply = result.reply.trim();
     } catch (err) {
-      // On an internal error the bot stays SILENT (office handles it) rather than
-      // sending an apology — per the "only reply when 100% certain" rule.
-      logger.error({ err }, 'llm turn failed; staying silent');
+      // A hard internal error (LLM crash) — we can't produce a good reply, so send
+      // nothing and let the office pick it up rather than emit garbage.
+      logger.error({ err }, 'llm turn failed; sending nothing');
       return;
     }
 
-    // SILENCE-FIRST (Brandon #1): the bot answers ONLY when 100% certain. When the
-    // model is not sure it outputs the [[SILENT]] sentinel (or nothing) — in that
-    // case we send NOTHING and leave the conversation for the office to handle by
-    // hand. This is the deliberate default: better silent than a wrong/partial reply.
+    // Brandon #1 (revised): the bot is HELPFUL by default — it answers when ~80%+
+    // confident and asks follow-up questions when unsure. It only goes silent when
+    // the office has taken over (the model emits [[SILENT]] then, or on a handed-off
+    // conversation). An empty/[[SILENT]] reply means "stay silent" → send nothing.
     if (isSilent(reply)) {
-      logger.info({ conversation: conversationId }, 'not confident — staying silent for office');
+      logger.info({ conversation: conversationId }, 'model signaled silence (office handling)');
       return;
     }
 
