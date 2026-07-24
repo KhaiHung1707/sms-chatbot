@@ -16,6 +16,7 @@ export class MemoryStore implements Store {
     {
       conversationId: string; wcProductId: number | null; result: string;
       year: number | null; make: string | null; model: string | null; partType: string | null;
+      sku: string | null;
     }
   >();
   lookupOrder: string[] = []; // insertion order, for getLatestFoundLookup
@@ -153,6 +154,7 @@ export class MemoryStore implements Store {
       make: input.make,
       model: input.model,
       partType: input.partType,
+      sku: input.sku ?? null,
     });
     this.lookupOrder.push(id);
     return { id };
@@ -175,17 +177,25 @@ export class MemoryStore implements Store {
   }
 
   async getLatestFoundLookup(conversationId: string): Promise<{
-    id: string; wcProductId: number; year: number; make: string; model: string; part: string;
+    id: string; wcProductId: number;
+    year: number | null; make: string | null; model: string | null; part: string | null;
+    sku: string | null;
   } | null> {
-    // Most recent 'found' lookup with a product id, for this conversation.
+    // Most recent 'found' lookup with a product id, for this conversation. It's
+    // recoverable if it has either full ymm (vehicle search) OR a sku (SKU lookup).
     for (let i = this.lookupOrder.length - 1; i >= 0; i--) {
       const id = this.lookupOrder[i]!;
       const l = this.lookups.get(id);
+      const hasYmm = l && l.year !== null && l.make !== null && l.model !== null && l.partType !== null;
+      const hasSku = l && l.sku !== null;
       if (
         l && l.conversationId === conversationId && l.result === 'found' &&
-        l.wcProductId !== null && l.year !== null && l.make !== null && l.model !== null && l.partType !== null
+        l.wcProductId !== null && (hasYmm || hasSku)
       ) {
-        return { id, wcProductId: l.wcProductId, year: l.year, make: l.make, model: l.model, part: l.partType };
+        return {
+          id, wcProductId: l.wcProductId,
+          year: l.year, make: l.make, model: l.model, part: l.partType, sku: l.sku,
+        };
       }
     }
     return null;

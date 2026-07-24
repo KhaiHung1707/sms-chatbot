@@ -1,6 +1,6 @@
 import { z } from 'zod';
 import type Anthropic from '@anthropic-ai/sdk';
-import type { InventoryClient } from '../providers/inventory.js';
+import type { InventoryClient, InventoryItem } from '../providers/inventory.js';
 
 /**
  * Claude tool definitions and their executors.
@@ -26,6 +26,18 @@ export const toolDefinitions: Anthropic.Tool[] = [
         },
       },
       required: ['year', 'make', 'model', 'part'],
+    },
+  },
+  {
+    name: 'lookup_sku',
+    description:
+      'Look up a product directly by its SKU / part number (e.g. "GM1000683", "HO1070157" — 2 letters followed by 6-8 digits). Use this whenever the customer gives a part number instead of a vehicle. Returns the product name, price, stock, feature bullets, vehicle fitment, and order link.',
+    input_schema: {
+      type: 'object',
+      properties: {
+        sku: { type: 'string', description: 'the SKU / part number, e.g. GM1000683' },
+      },
+      required: ['sku'],
     },
   },
   {
@@ -62,8 +74,17 @@ export const createHoldSchema = z.object({
   qty: z.coerce.number().int().positive().max(50).optional(),
 });
 
+// A SKU is 2 letters + 6-8 digits (GM1000683, HO1070157). Case-insensitive.
+export const lookupSkuSchema = z.object({
+  sku: z
+    .string()
+    .trim()
+    .regex(/^[A-Za-z]{2}\d{6,8}$/, 'not a valid SKU'),
+});
+
 export type SearchInventoryInput = z.infer<typeof searchInventorySchema>;
 export type CreateHoldInput = z.infer<typeof createHoldSchema>;
+export type LookupSkuInput = z.infer<typeof lookupSkuSchema>;
 
 /**
  * Result of executing search_inventory, shaped for the tool_result block AND
@@ -153,24 +174,7 @@ export async function executeSearchInventory(
   // Update 001 Rule 2: subtract active holds so the model never sees — and so
   // never quotes — a unit that's already reserved for another customer.
   const enriched = await Promise.all(
-    results.map(async (item) => {
-      const apiQty = item.inventory.reduce((sum, w) => sum + w.qty, 0);
-      const held = await activeHoldQty(item.product_id);
-      const effectiveQty = Math.max(0, apiQty - held);
-      const band = availabilityBand(effectiveQty);
-      return {
-        product_id: item.product_id,
-        sku: item.sku,
-        title: item.title,
-        price: item.price,
-        variants: item.variants,
-        permalink: item.permalink, // "Order link" in the reply template
-        // Effective, hold-adjusted numbers only — the raw API qty is not exposed.
-        effective_qty: effectiveQty,
-        availability: band,
-        phrasing: phrasingFor(band),
-      };
-    }),
+    results.map((item) => enrichItem(item, activeHoldQty)),
   );
 
   const first = enriched[0]!;
@@ -185,6 +189,91 @@ export async function executeSearchInventory(
     firstPrice: first.price,
     firstWarehouse: inStockWarehouse,
     firstEffectiveQty: first.effective_qty,
+    firstApiQty,
+  };
+}
+
+/**
+ * Shared per-item enrichment (Update 001 Rule 2): subtract active holds so the
+ * model never sees a reserved unit, and attach the honest-stock band/phrasing.
+ * Used by BOTH search_inventory and lookup_sku so a SKU quote also respects holds.
+ */
+async function enrichItem(item: InventoryItem, activeHoldQty: ActiveHoldLookup) {
+  const apiQty = item.inventory.reduce((sum, w) => sum + w.qty, 0);
+  const held = await activeHoldQty(item.product_id);
+  const effectiveQty = Math.max(0, apiQty - held);
+  const band = availabilityBand(effectiveQty);
+  return {
+    product_id: item.product_id,
+    sku: item.sku,
+    title: item.title,
+    price: item.price,
+    variants: item.variants,
+    permalink: item.permalink,
+    effective_qty: effectiveQty,
+    availability: band,
+    phrasing: phrasingFor(band),
+  };
+}
+
+/**
+ * Execute lookup_sku: fetch a product by SKU, enrich it (holds/honest-stock), and
+ * pass through `features` + `fitments` for the SKU reply template. Mirrors
+ * SearchExecution so the pipeline records the lookup the same way.
+ */
+export async function executeLookupSku(
+  inventory: InventoryClient,
+  sku: string,
+  activeHoldQty: ActiveHoldLookup,
+): Promise<SearchExecution> {
+  const outcome = await inventory.lookupBySku(sku);
+
+  if (outcome.status === 'api_error') {
+    return {
+      toolResult: JSON.stringify({
+        error: 'inventory_unavailable',
+        message:
+          'The inventory system could not be reached. Do not state any numbers; tell the customer a staff member will follow up.',
+      }),
+      lookupResult: 'api_error',
+      firstProductId: null,
+      firstPrice: null,
+      firstWarehouse: null,
+      firstEffectiveQty: null,
+      firstApiQty: null,
+    };
+  }
+
+  const results = outcome.results;
+  if (results.length === 0) {
+    return {
+      toolResult: JSON.stringify({ results: [], message: `No product found with SKU ${sku}.` }),
+      lookupResult: 'not_found',
+      firstProductId: null,
+      firstPrice: null,
+      firstWarehouse: null,
+      firstEffectiveQty: null,
+      firstApiQty: null,
+    };
+  }
+
+  const item = results[0]!;
+  const enriched = await enrichItem(item, activeHoldQty);
+  const firstApiQty = item.inventory.reduce((sum, w) => sum + w.qty, 0);
+  const inStockWarehouse = item.inventory.find((w) => w.qty > 0)?.warehouse ?? null;
+
+  // Hand the model the enriched item PLUS the SKU extras (features, fitments).
+  const toolResult = JSON.stringify({
+    results: [{ ...enriched, features: item.features, fitments: item.fitments }],
+  });
+
+  return {
+    toolResult,
+    lookupResult: enriched.effective_qty > 0 ? 'found' : 'no_stock',
+    firstProductId: enriched.product_id,
+    firstPrice: enriched.price,
+    firstWarehouse: inStockWarehouse,
+    firstEffectiveQty: enriched.effective_qty,
     firstApiQty,
   };
 }

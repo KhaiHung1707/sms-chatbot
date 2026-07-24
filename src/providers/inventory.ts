@@ -22,6 +22,13 @@ const inventoryItemSchema = z.object({
   inventory: z.array(
     z.object({ warehouse: z.string(), qty: z.number() }),
   ),
+  // SKU-lookup extras — only returned by /parts/lookup. Optional so /parts/search
+  // (which omits them) still validates.
+  features: z.array(z.string()).optional().default([]),
+  fitments: z
+    .array(z.object({ year: z.number(), make: z.string(), model: z.string() }))
+    .optional()
+    .default([]),
 });
 
 const searchResponseSchema = z.object({
@@ -61,6 +68,23 @@ export class InventoryClient {
     url.searchParams.set('model', params.model);
     url.searchParams.set('part', params.part);
 
+    return this.run(url);
+  }
+
+  /**
+   * Look up a single product by SKU / part number (customer texts "GM1000683").
+   * Same auth/timeout/retry as search; returns the same discriminated outcome.
+   * The response carries `features` and `fitments` in addition to the usual item
+   * fields. An empty results array means the SKU wasn't found (status 'ok').
+   */
+  async lookupBySku(sku: string): Promise<InventorySearchOutcome> {
+    const url = new URL(`${this.config.baseUrl}/parts/lookup`);
+    url.searchParams.set('sku', sku);
+    return this.run(url);
+  }
+
+  /** Shared attempt+retry loop for any inventory GET. */
+  private async run(url: URL): Promise<InventorySearchOutcome> {
     for (let attempt = 0; attempt < 2; attempt++) {
       const outcome = await this.attempt(url);
       if (outcome.status === 'ok') return outcome;

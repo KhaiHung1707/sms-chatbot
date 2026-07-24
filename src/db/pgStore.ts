@@ -137,11 +137,12 @@ export class PgStore implements Store {
     const rows = await this.sql<{ id: string }[]>`
       insert into part_lookups
         (conversation_id, year, make, model, part_type, wc_product_id,
-         price_snapshot, warehouse, effective_qty, result)
+         price_snapshot, warehouse, effective_qty, result, sku)
       values
         (${input.conversationId}, ${input.year}, ${input.make}, ${input.model},
          ${input.partType}, ${input.wcProductId}, ${input.priceSnapshot},
-         ${input.warehouse}, ${input.effectiveQty}, ${input.result})
+         ${input.warehouse}, ${input.effectiveQty}, ${input.result},
+         ${input.sku ?? null})
       returning id`;
     return { id: rows[0]!.id };
   }
@@ -162,20 +163,26 @@ export class PgStore implements Store {
   }
 
   async getLatestFoundLookup(conversationId: string): Promise<{
-    id: string; wcProductId: number; year: number; make: string; model: string; part: string;
+    id: string; wcProductId: number;
+    year: number | null; make: string | null; model: string | null; part: string | null;
+    sku: string | null;
   } | null> {
     const rows = await this.sql<
-      { id: string; wc_product_id: string; year: number; make: string; model: string; part_type: string }[]
+      {
+        id: string; wc_product_id: string;
+        year: number | null; make: string | null; model: string | null;
+        part_type: string | null; sku: string | null;
+      }[]
     >`
-      select id, wc_product_id, year, make, model, part_type
+      select id, wc_product_id, year, make, model, part_type, sku
       from part_lookups
       where conversation_id = ${conversationId}
         and result = 'found'
         and wc_product_id is not null
-        and year is not null
-        and make is not null
-        and model is not null
-        and part_type is not null
+        and (
+          (year is not null and make is not null and model is not null and part_type is not null)
+          or sku is not null
+        )
       order by created_at desc
       limit 1`;
     const row = rows[0];
@@ -187,6 +194,7 @@ export class PgStore implements Store {
           make: row.make,
           model: row.model,
           part: row.part_type,
+          sku: row.sku,
         }
       : null;
   }

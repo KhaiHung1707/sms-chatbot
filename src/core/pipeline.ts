@@ -7,8 +7,10 @@ import type { QuoClient } from '../providers/quo.js';
 import { OutOfCreditError } from '../providers/quo.js';
 import {
   executeSearchInventory,
+  executeLookupSku,
   searchInventorySchema,
   createHoldSchema,
+  lookupSkuSchema,
   type SearchInventoryInput,
 } from '../llm/tools.js';
 import { buildSystemPrompt } from '../llm/systemPrompt.js';
@@ -294,6 +296,7 @@ export class Pipeline {
     let lastLookupId: string | null = null;
     let lastProductId: number | null = null;
     let lastSearchParams: SearchInventoryInput | null = null;
+    let lastSku: string | null = null; // set when the prior lookup was by SKU
 
     return async (name: string, input: unknown): Promise<string> => {
       if (name === 'search_inventory') {
@@ -329,6 +332,44 @@ export class Pipeline {
         lastLookupId = lookup.id;
         lastProductId = exec.firstProductId;
         lastSearchParams = params;
+        lastSku = null;
+        return exec.toolResult;
+      }
+
+      if (name === 'lookup_sku') {
+        const parsed = lookupSkuSchema.safeParse(input);
+        if (!parsed.success) {
+          logger.warn({ input }, 'lookup_sku: invalid tool input');
+          return JSON.stringify({
+            error: 'invalid_input',
+            message: "That doesn't look like a valid part number. Ask the customer to re-check the SKU.",
+          });
+        }
+        const sku = parsed.data.sku;
+        const exec = await executeLookupSku(
+          this.deps.inventory,
+          sku,
+          (productId) => this.deps.store.getActiveHoldQty(productId),
+        );
+        // Record the lookup (ymm fields null — this was a SKU lookup) so a hold
+        // confirmed in a later turn can recover the product.
+        const lookup = await this.deps.store.recordLookup({
+          conversationId,
+          year: null,
+          make: null,
+          model: null,
+          partType: null,
+          wcProductId: exec.firstProductId,
+          priceSnapshot: exec.firstPrice,
+          warehouse: exec.firstWarehouse,
+          effectiveQty: exec.firstEffectiveQty,
+          result: exec.lookupResult,
+          sku,
+        });
+        lastLookupId = lookup.id;
+        lastProductId = exec.firstProductId;
+        lastSearchParams = null;
+        lastSku = exec.firstProductId ? sku : null;
         return exec.toolResult;
       }
 
@@ -347,15 +388,21 @@ export class Pipeline {
         // search, so this turn's closure vars may be null. Recover context from
         // the conversation's most recent 'found' lookup (product + search params).
         const recent = await this.deps.store.getLatestFoundLookup(conversationId);
-        const searchParams =
-          lastSearchParams ??
-          (recent
+        // Rebuild ymm search params only if the recovered lookup has full ymm
+        // (a SKU-only lookup has null ymm — it's re-read via SKU instead).
+        const recentYmm =
+          recent && recent.year !== null && recent.make !== null &&
+          recent.model !== null && recent.part !== null
             ? { year: recent.year, make: recent.make, model: recent.model, part: recent.part }
-            : null);
+            : null;
+        const searchParams: SearchInventoryInput | null = lastSearchParams ?? recentYmm;
         const productId = wantProduct ?? recent?.wcProductId ?? null;
         const lookupId = lastLookupId ?? recent?.id ?? null;
+        // A SKU lookup has no ymm search params, so recover the SKU: this turn's
+        // lastSku, or the recovered lookup's sku (a SKU-only lookup has null ymm).
+        const skuToReread = lastSku ?? (searchParams ? null : recent?.sku ?? null);
 
-        if (productId === null || lookupId === null || !searchParams) {
+        if (productId === null || lookupId === null || (!searchParams && !skuToReread)) {
           return JSON.stringify({
             held: false,
             reason: 'no_prior_lookup',
@@ -365,9 +412,11 @@ export class Pipeline {
         }
 
         // Update 001: read FRESH stock for this product right before holding —
-        // the warehouse sells all day, so the earlier search snapshot may be
-        // stale. Re-run the search and take the matching product's on-hand qty.
-        const outcome = await this.deps.inventory.search(searchParams);
+        // the warehouse sells all day, so the earlier snapshot may be stale.
+        // Re-read via SKU if the prior lookup was by SKU, else via ymm search.
+        const outcome = skuToReread
+          ? await this.deps.inventory.lookupBySku(skuToReread)
+          : await this.deps.inventory.search(searchParams!);
         if (outcome.status !== 'ok') {
           return JSON.stringify({
             held: false,

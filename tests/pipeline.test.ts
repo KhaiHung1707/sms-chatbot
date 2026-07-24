@@ -4,7 +4,7 @@ import type { Config } from '../src/config.js';
 import type { InboundMessage } from '../src/types.js';
 import { MemoryStore } from './memoryStore.js';
 import { ScriptedLlm, ThrowingLlm, SpyQuo, asQuo, type LlmStep } from './fakes.js';
-import { MockInventoryClient, foundItem } from './mocks.js';
+import { MockInventoryClient, foundItem, skuItem } from './mocks.js';
 import type { InventoryClient } from '../src/providers/inventory.js';
 import type { InventorySearchOutcome } from '../src/providers/inventory.js';
 import type { LlmClient } from '../src/llm/claude.js';
@@ -395,6 +395,74 @@ describe('Update 001 — hold confirmed in a SEPARATE turn from the search', () 
     await pipeline2.handleInbound(inbound({ from, body: 'yes hold it' }));
 
     // The hold must actually exist for the product, reserving the last unit.
+    expect(await rig.store.getActiveHoldQty(48213)).toBe(1);
+  });
+});
+
+describe('SKU / part-number lookup (Brandon)', () => {
+  it('customer texts a SKU → bot quotes it via lookup_sku', async () => {
+    const llm = new ScriptedLlm([
+      {
+        kind: 'tool',
+        name: 'lookup_sku',
+        input: { sku: 'GM1000683' },
+        thenText:
+          'FRONT BUMPER COVER\nSKU: GM1000683\nPrice: $115.30\nStatus: In Stock',
+      },
+    ]);
+    const rig = build({
+      llm,
+      inventoryOutcome: { status: 'ok', results: [skuItem(115.3, 4)] },
+    });
+    await rig.pipeline.handleInbound(inbound({ body: 'GM1000683' }));
+    expect(rig.quo.sent).toHaveLength(1);
+    expect(rig.quo.sent[0]!.content).toContain('GM1000683');
+    expect(rig.quo.sent[0]!.content).toContain('115.30');
+  });
+
+  it('lookup_sku result feeds the model the features + fitments', async () => {
+    // Capture what the tool hands back to the model so the reply template can
+    // include features/fits. We assert on the tool result via a second turn.
+    const llm = new ScriptedLlm([
+      { kind: 'tool', name: 'lookup_sku', input: { sku: 'GM1000683' }, thenText: 'ok' },
+    ]);
+    const rig = build({
+      llm,
+      inventoryOutcome: { status: 'ok', results: [skuItem(115.3, 4)] },
+    });
+    await rig.pipeline.handleInbound(inbound({ body: 'part number GM1000683' }));
+    const toolResult = (llm as unknown as { toolResults: string[] }).toolResults[0]!;
+    expect(toolResult).toContain('For Ss Model');
+    expect(toolResult).toContain('Primed/Paint To Match');
+    expect(toolResult).toContain('silverado');
+  });
+
+  it('hold after a SKU quote reserves the product (SKU hold-continuity)', async () => {
+    const from = '+15105550909';
+    // Turn 1: SKU lookup records a found lookup with sku set.
+    const rig = build({
+      llm: new ScriptedLlm([
+        { kind: 'tool', name: 'lookup_sku', input: { sku: 'GM1000683' }, thenText: '$115.30, in stock. Want me to hold it?' },
+      ]),
+      inventoryOutcome: { status: 'ok', results: [skuItem(115.3, 1)] },
+    });
+    await rig.pipeline.handleInbound(inbound({ from, body: 'GM1000683' }));
+
+    // Turn 2 (new closure): "hold it" — must recover the SKU and reserve.
+    const holdLlm = new ScriptedLlm([
+      { kind: 'tool', name: 'create_hold', input: { qty: 1 }, thenText: 'Held ✓' },
+    ]);
+    const pipeline2 = new Pipeline({
+      store: rig.store,
+      llm: holdLlm,
+      quo: asQuo(rig.quo),
+      inventory: new MockInventoryClient(
+        { status: 'ok', results: [] },
+        { status: 'ok', results: [skuItem(115.3, 1)] }, // SKU re-read
+      ) as unknown as InventoryClient,
+      config: CONFIG,
+    });
+    await pipeline2.handleInbound(inbound({ from, body: 'yes hold it' }));
     expect(await rig.store.getActiveHoldQty(48213)).toBe(1);
   });
 });

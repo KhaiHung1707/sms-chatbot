@@ -78,6 +78,8 @@ export interface Store {
     /** Effective qty quoted to the customer at reply time (audit, Update 001). */
     effectiveQty: number | null;
     result: string;
+    /** SKU, when the lookup was by part number (else null). */
+    sku?: string | null;
   }): Promise<{ id: string }>;
 
   /**
@@ -97,10 +99,13 @@ export interface Store {
   getLatestFoundLookup(conversationId: string): Promise<{
     id: string;
     wcProductId: number;
-    year: number;
-    make: string;
-    model: string;
-    part: string;
+    /** ymm/part are present for a vehicle search, null for a SKU-only lookup. */
+    year: number | null;
+    make: string | null;
+    model: string | null;
+    part: string | null;
+    /** SKU, when the lookup was by part number (else null). */
+    sku: string | null;
   } | null>;
 
   /**

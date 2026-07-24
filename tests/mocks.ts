@@ -47,13 +47,34 @@ export function inboundWebhookBody(overrides: Partial<{
 
 /** A configurable fake InventoryClient (duck-typed to the real one). */
 export class MockInventoryClient {
-  constructor(private outcome: InventorySearchOutcome) {}
+  constructor(
+    private outcome: InventorySearchOutcome,
+    private skuOutcome?: InventorySearchOutcome,
+  ) {}
   setOutcome(outcome: InventorySearchOutcome): void {
     this.outcome = outcome;
   }
   async search(): Promise<InventorySearchOutcome> {
     return this.outcome;
   }
+  async lookupBySku(): Promise<InventorySearchOutcome> {
+    return this.skuOutcome ?? this.outcome;
+  }
+}
+
+/** An item with SKU-lookup extras (features + fitments), for lookup_sku tests. */
+export function skuItem(price: number, qty: number): InventoryItem {
+  return {
+    product_id: 48213,
+    sku: 'GM1000683',
+    title: 'FRONT BUMPER COVER',
+    price,
+    variants: [],
+    permalink: 'https://oaklandbodyparts.com/product/gm1000683',
+    inventory: [{ warehouse: 'US', qty }],
+    features: ['For Ss Model', 'Primed/Paint To Match', 'Made Of Plastic'],
+    fitments: [{ year: 2007, make: 'chevrolet', model: 'silverado' }],
+  };
 }
 
 export function foundItem(price: number, qty: number): InventoryItem {

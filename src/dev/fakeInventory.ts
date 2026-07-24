@@ -20,6 +20,8 @@ const CATALOG: Array<InventoryItem & { year: number; make: string; model: string
     price: 129.95, variants: ['black', 'primed', 'painted'],
     permalink: 'https://oaklandbodyparts.com/product/ho1000123',
     inventory: [{ warehouse: 'US', qty: 4 }], // in_stock
+    features: ['For SS Model', 'Primed/Paint To Match', 'Made Of Plastic'],
+    fitments: [{ year: 1995, make: 'honda', model: 'accord' }],
   },
   {
     year: 1998, make: 'honda', model: 'civic', part: 'left mirror',
@@ -28,6 +30,8 @@ const CATALOG: Array<InventoryItem & { year: number; make: string; model: string
     price: 42.5, variants: [],
     permalink: 'https://oaklandbodyparts.com/product/ho1000550',
     inventory: [{ warehouse: 'US', qty: 1 }], // low
+    features: [],
+    fitments: [{ year: 1998, make: 'honda', model: 'civic' }],
   },
   {
     year: 2005, make: 'toyota', model: 'camry', part: 'tail light',
@@ -36,6 +40,8 @@ const CATALOG: Array<InventoryItem & { year: number; make: string; model: string
     price: 88.0, variants: [],
     permalink: 'https://oaklandbodyparts.com/product/to2000777',
     inventory: [{ warehouse: 'US', qty: 0 }], // out
+    features: [],
+    fitments: [{ year: 2005, make: 'toyota', model: 'camry' }],
   },
 ];
 
@@ -53,6 +59,15 @@ export class FakeInventory {
         item.part === part,
     ).map(({ year: _y, make: _mk, model: _md, part: _p, ...item }) => item);
 
+    return { status: 'ok', results };
+  }
+
+  /** Look up by SKU (case-insensitive), mirroring the real /parts/lookup. */
+  async lookupBySku(sku: string): Promise<InventorySearchOutcome> {
+    const wanted = sku.toLowerCase().trim();
+    const results = CATALOG.filter(
+      (item) => item.sku.toLowerCase() === wanted,
+    ).map(({ year: _y, make: _mk, model: _md, part: _p, ...item }) => item);
     return { status: 'ok', results };
   }
 
