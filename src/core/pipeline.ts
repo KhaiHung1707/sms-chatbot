@@ -53,6 +53,33 @@ function isSilent(reply: string): boolean {
   return normalized === SILENT_SENTINEL.toUpperCase() || normalized.includes('[[SILENT]]');
 }
 
+/** The only domain the bot is ever allowed to link to. */
+const ALLOWED_LINK_HOST = 'oaklandbodyparts.com';
+
+/**
+ * Safety net against link hallucination: the model has sent customers wrong links
+ * (e.g. a fabricated ebay.com/itm/<sku>). We NEVER want to send a customer to a
+ * competitor. This strips any http(s) URL whose host is not oaklandbodyparts.com
+ * from an outbound reply, and tidies leftover "Order link:" labels.
+ */
+function stripForeignLinks(text: string): string {
+  let stripped = text.replace(/https?:\/\/[^\s]+/gi, (url) => {
+    try {
+      const host = new URL(url).hostname.toLowerCase();
+      const ok = host === ALLOWED_LINK_HOST || host.endsWith(`.${ALLOWED_LINK_HOST}`);
+      return ok ? url : '';
+    } catch {
+      return ''; // unparseable → drop it
+    }
+  });
+  // Clean up an "Order:"/"Order link:" line left dangling with no URL after it.
+  stripped = stripped
+    .replace(/^[ \t]*Order(?:\s+link)?:[ \t]*$/gim, '')
+    .replace(/\n{3,}/g, '\n\n')
+    .trim();
+  return stripped;
+}
+
 export class Pipeline {
   private readonly conversations: ConversationManager;
 
@@ -281,7 +308,18 @@ export class Pipeline {
       return;
     }
 
-    await this.reply(customerId, phone, conversationId, reply);
+    // Safety net: never send a customer a link to any site other than
+    // oaklandbodyparts.com (the model has hallucinated eBay links from a SKU).
+    const safe = stripForeignLinks(reply);
+    if (safe !== reply) {
+      logger.warn({ conversation: conversationId }, 'stripped a non-shop link from the reply');
+    }
+    if (isSilent(safe)) {
+      // Stripping left nothing meaningful → stay silent rather than send junk.
+      return;
+    }
+
+    await this.reply(customerId, phone, conversationId, safe);
   }
 
   /**

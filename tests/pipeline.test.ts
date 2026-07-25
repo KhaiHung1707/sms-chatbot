@@ -466,3 +466,38 @@ describe('SKU / part-number lookup (Brandon)', () => {
     expect(await rig.store.getActiveHoldQty(48213)).toBe(1);
   });
 });
+
+describe('link safety — never send a non-shop URL', () => {
+  it('strips a hallucinated eBay link, keeps the rest of the reply', async () => {
+    const llm = new ScriptedLlm([
+      {
+        kind: 'tool',
+        name: 'search_inventory',
+        input: { year: 2018, make: 'Nissan', model: 'Rogue', part: 'front bumper' },
+        thenText:
+          "Here's the front bumper cover:\nOrder: https://www.ebay.com/itm/NI1000318\nLet me know!",
+      },
+    ]);
+    const rig = build({ llm, inventoryOutcome: { status: 'ok', results: [foundItem(199.0, 3)] } });
+    await rig.pipeline.handleInbound(inbound({ body: '2018 nissan rogue front bumper' }));
+    expect(rig.quo.sent).toHaveLength(1);
+    const sent = rig.quo.sent[0]!.content;
+    expect(sent).not.toContain('ebay.com');
+    expect(sent).not.toContain('http'); // no leftover URL at all
+    expect(sent.toLowerCase()).toContain('front bumper');
+  });
+
+  it('keeps a real oaklandbodyparts.com link', async () => {
+    const llm = new ScriptedLlm([
+      {
+        kind: 'tool',
+        name: 'lookup_sku',
+        input: { sku: 'GM1000683' },
+        thenText: 'FRONT BUMPER COVER\nOrder: https://oaklandbodyparts.com/product/gm1000683',
+      },
+    ]);
+    const rig = build({ llm, inventoryOutcome: { status: 'ok', results: [skuItem(115.3, 4)] } });
+    await rig.pipeline.handleInbound(inbound({ body: 'GM1000683' }));
+    expect(rig.quo.sent[0]!.content).toContain('oaklandbodyparts.com/product/gm1000683');
+  });
+});
