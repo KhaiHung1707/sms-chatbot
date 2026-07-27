@@ -91,11 +91,42 @@ export class Pipeline {
   // order, closing those races. Different phones still run concurrently.
   private readonly phoneLocks = new Map<string, Promise<void>>();
 
+  // Cache of the live editable instruction steps. Loaded lazily on the first
+  // reply and reused; the admin page calls refreshInstructions() after a
+  // publish/rollback so the change takes effect without a restart. undefined =
+  // not loaded yet; null = loaded but table empty/unreachable → use defaults.
+  private liveSteps: readonly string[] | null | undefined = undefined;
+
   constructor(private readonly deps: PipelineDeps) {
     this.conversations = new ConversationManager(
       deps.store,
       deps.config.CONVERSATION_TTL_HOURS,
     );
+  }
+
+  /**
+   * The live editable conversation-flow steps, memoized. Falls back to the code
+   * default (buildSystemPrompt uses DEFAULT_INSTRUCTION_STEPS when given
+   * undefined) if the table is empty or the read fails — so a DB hiccup NEVER
+   * breaks a reply. Never throws.
+   */
+  private async getLiveSteps(): Promise<readonly string[] | undefined> {
+    if (this.liveSteps !== undefined) {
+      return this.liveSteps ?? undefined;
+    }
+    try {
+      const live = await this.deps.store.getLiveInstructions();
+      this.liveSteps = live && live.steps.length > 0 ? live.steps : null;
+    } catch (err) {
+      logger.error({ err }, 'failed to load live instructions; using code defaults');
+      this.liveSteps = null;
+    }
+    return this.liveSteps ?? undefined;
+  }
+
+  /** Called by the admin page after publish/rollback so the change takes effect. */
+  refreshInstructions(): void {
+    this.liveSteps = undefined;
   }
 
   /** Run `fn` after any in-flight work for `phone`, serializing per phone. */
@@ -271,10 +302,12 @@ export class Pipeline {
     const history = await this.deps.store.getMessages(conversationId);
     const claudeHistory = toClaudeHistory(history);
 
+    const steps = await this.getLiveSteps();
     const system = buildSystemPrompt({
       shopAddress: this.deps.config.SHOP_ADDRESS,
       holdExpiryHour: this.deps.config.HOLD_EXPIRY_HOUR,
       knownLanguage,
+      steps,
     });
 
     const executeTool = this.buildToolExecutor(conversationId);

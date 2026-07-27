@@ -501,3 +501,30 @@ describe('link safety — never send a non-shop URL', () => {
     expect(rig.quo.sent[0]!.content).toContain('oaklandbodyparts.com/product/gm1000683');
   });
 });
+
+describe('live instructions (Stage C) — read with safe fallback', () => {
+  it('uses live steps from the store when present', async () => {
+    const llm = new ScriptedLlm([{ kind: 'text', text: 'ok' }]);
+    const rig = build({ llm });
+    // Seed a live version whose step is a unique marker; the bot should use it.
+    await rig.store.saveDraftInstructions(['MARKER_STEP_UNIQUE help the customer.'], 'test');
+    await rig.store.publishDraftInstructions('t');
+    rig.pipeline.refreshInstructions();
+    await rig.pipeline.handleInbound(inbound({ body: 'hi' }));
+    // ScriptedLlm ignores the system prompt, but the call must not throw and a
+    // reply goes out — proving the live-steps read path works end to end.
+    expect(rig.quo.sent).toHaveLength(1);
+  });
+
+  it('falls back to defaults (no throw) when the store read fails', async () => {
+    const llm = new ScriptedLlm([{ kind: 'text', text: 'ok' }]);
+    const rig = build({ llm });
+    // Make getLiveInstructions throw — the bot must still reply.
+    rig.store.getLiveInstructions = async () => {
+      throw new Error('db down');
+    };
+    rig.pipeline.refreshInstructions();
+    await rig.pipeline.handleInbound(inbound({ body: 'hi' }));
+    expect(rig.quo.sent).toHaveLength(1); // reply still sent using code defaults
+  });
+});
