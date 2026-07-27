@@ -1,5 +1,5 @@
 import { randomUUID } from 'node:crypto';
-import type { Store } from '../db/store.js';
+import type { Store, InstructionVersion } from '../db/store.js';
 import type { Conversation, Customer, Message } from '../types.js';
 
 /**
@@ -238,5 +238,57 @@ export class MemoryStore implements Store {
   /** Helper: outbound message bodies sent to a customer, in order. */
   outboundBodies(): string[] {
     return this.messages.filter((m) => m.direction === 'out').map((m) => m.body);
+  }
+
+  // ── Editable bot instructions ───────────────────────────────────────────────
+  instructionVersions: InstructionVersion[] = [];
+
+  private nextInstrVersion(): number {
+    return this.instructionVersions.reduce((m, v) => Math.max(m, v.version), 0) + 1;
+  }
+
+  async getLiveInstructions(): Promise<InstructionVersion | null> {
+    return this.instructionVersions.find((v) => v.status === 'live') ?? null;
+  }
+
+  async getDraftInstructions(): Promise<InstructionVersion | null> {
+    return this.instructionVersions.find((v) => v.status === 'draft') ?? null;
+  }
+
+  async saveDraftInstructions(steps: string[], author: string | null): Promise<InstructionVersion> {
+    this.instructionVersions = this.instructionVersions.filter((v) => v.status !== 'draft');
+    const draft: InstructionVersion = {
+      id: randomUUID(), version: this.nextInstrVersion(), steps: [...steps],
+      status: 'draft', note: null, author, createdAt: new Date().toISOString(), publishedAt: null,
+    };
+    this.instructionVersions.push(draft);
+    return draft;
+  }
+
+  async publishDraftInstructions(note: string | null): Promise<InstructionVersion | null> {
+    const draft = this.instructionVersions.find((v) => v.status === 'draft');
+    if (!draft) return null;
+    for (const v of this.instructionVersions) if (v.status === 'live') v.status = 'archived';
+    draft.status = 'live';
+    draft.note = note;
+    draft.publishedAt = new Date().toISOString();
+    return draft;
+  }
+
+  async listInstructionVersions(): Promise<InstructionVersion[]> {
+    return [...this.instructionVersions].sort((a, b) => b.version - a.version);
+  }
+
+  async restoreInstructionVersion(id: string, author: string | null): Promise<InstructionVersion | null> {
+    const src = this.instructionVersions.find((v) => v.id === id);
+    if (!src) return null;
+    this.instructionVersions = this.instructionVersions.filter((v) => v.status !== 'draft');
+    const draft: InstructionVersion = {
+      id: randomUUID(), version: this.nextInstrVersion(), steps: [...src.steps],
+      status: 'draft', note: 'Restored from an earlier version', author,
+      createdAt: new Date().toISOString(), publishedAt: null,
+    };
+    this.instructionVersions.push(draft);
+    return draft;
   }
 }

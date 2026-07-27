@@ -4,6 +4,7 @@ import { fileURLToPath } from 'node:url';
 import postgres from 'postgres';
 import { loadConfig } from '../config.js';
 import { logger } from '../logger.js';
+import { DEFAULT_INSTRUCTION_STEPS } from '../llm/systemPrompt.js';
 
 /**
  * Minimal, idempotent migration runner. Applies every `*.sql` file in
@@ -48,6 +49,24 @@ export async function runMigrations(databaseUrl: string): Promise<string[]> {
       applied.push(file);
       logger.info({ file }, 'migration applied');
     }
+
+    // Seed the first live instruction version FROM CODE (guarantees the DB's
+    // steps are byte-identical to DEFAULT_INSTRUCTION_STEPS, so the pipeline
+    // reads back exactly today's behavior). Only when the table exists and is
+    // empty — idempotent, safe on every boot.
+    const tableExists = await sql`
+      select 1 from information_schema.tables
+      where table_name = 'instruction_versions' limit 1`;
+    if (tableExists.length > 0) {
+      const seeded = await sql`
+        insert into instruction_versions (version, steps, status, note, author, published_at)
+        select 1, ${sql.json([...DEFAULT_INSTRUCTION_STEPS])}::jsonb,
+               'live', 'Initial version (seeded from code defaults)', 'system', now()
+        where not exists (select 1 from instruction_versions)
+        returning id`;
+      if (seeded.length > 0) logger.info('seeded instruction_versions v1 (live)');
+    }
+
     return applied;
   } finally {
     await sql`select pg_advisory_unlock(${LOCK_KEY})`.catch(() => {});

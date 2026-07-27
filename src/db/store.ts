@@ -130,6 +130,47 @@ export interface Store {
 
   /** Cron: close open conversations past their TTL. Returns count. */
   closeExpiredConversations(now: Date): Promise<number>;
+
+  // ── Editable bot instructions (admin page) ──────────────────────────────────
+
+  /** The steps the bot is CURRENTLY using (status='live'). Null if none seeded. */
+  getLiveInstructions(): Promise<InstructionVersion | null>;
+
+  /** The draft the owner is editing (status='draft'), or null. */
+  getDraftInstructions(): Promise<InstructionVersion | null>;
+
+  /**
+   * Create or replace the single draft with these steps. Returns the draft.
+   * (There is at most one draft — an existing one is overwritten.)
+   */
+  saveDraftInstructions(steps: string[], author: string | null): Promise<InstructionVersion>;
+
+  /**
+   * Publish the current draft: it becomes the new live version (the old live is
+   * archived). Returns the new live version, or null if there was no draft.
+   */
+  publishDraftInstructions(note: string | null): Promise<InstructionVersion | null>;
+
+  /** All versions, newest first, for the history table. */
+  listInstructionVersions(): Promise<InstructionVersion[]>;
+
+  /**
+   * Roll back: copy an archived/old version's steps into a NEW draft (owner then
+   * reviews + publishes). Returns the new draft, or null if the id is unknown.
+   */
+  restoreInstructionVersion(id: string, author: string | null): Promise<InstructionVersion | null>;
+}
+
+/** A stored version of the editable conversation-flow steps. */
+export interface InstructionVersion {
+  id: string;
+  version: number;
+  steps: string[];
+  status: 'draft' | 'live' | 'archived';
+  note: string | null;
+  author: string | null;
+  createdAt: string;
+  publishedAt: string | null;
 }
 
 export type { MessageDirection };

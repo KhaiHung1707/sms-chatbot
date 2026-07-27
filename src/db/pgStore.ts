@@ -1,5 +1,5 @@
 import postgres from 'postgres';
-import type { Store } from './store.js';
+import type { Store, InstructionVersion } from './store.js';
 import type { Conversation, Customer, Message } from '../types.js';
 
 /**
@@ -249,5 +249,87 @@ export class PgStore implements Store {
       where status = 'open' and expires_at <= ${now}
       returning id`;
     return rows.count;
+  }
+
+  // ── Editable bot instructions ───────────────────────────────────────────────
+
+  private mapInstr(r: {
+    id: string; version: number; steps: unknown; status: string;
+    note: string | null; author: string | null; created_at: Date; published_at: Date | null;
+  }): InstructionVersion {
+    return {
+      id: r.id,
+      version: r.version,
+      steps: (r.steps as string[]) ?? [],
+      status: r.status as InstructionVersion['status'],
+      note: r.note,
+      author: r.author,
+      createdAt: r.created_at.toISOString(),
+      publishedAt: r.published_at ? r.published_at.toISOString() : null,
+    };
+  }
+
+  async getLiveInstructions(): Promise<InstructionVersion | null> {
+    const rows = await this.sql`
+      select * from instruction_versions where status = 'live' limit 1`;
+    return rows[0] ? this.mapInstr(rows[0] as never) : null;
+  }
+
+  async getDraftInstructions(): Promise<InstructionVersion | null> {
+    const rows = await this.sql`
+      select * from instruction_versions where status = 'draft' limit 1`;
+    return rows[0] ? this.mapInstr(rows[0] as never) : null;
+  }
+
+  async saveDraftInstructions(steps: string[], author: string | null): Promise<InstructionVersion> {
+    return this.sql.begin(async (tx) => {
+      const nextVer = await tx<{ v: number }[]>`
+        select coalesce(max(version), 0) + 1 as v from instruction_versions`;
+      const version = nextVer[0]!.v;
+      // Replace any existing draft (at most one).
+      await tx`delete from instruction_versions where status = 'draft'`;
+      const rows = await tx`
+        insert into instruction_versions (version, steps, status, author)
+        values (${version}, ${tx.json(steps)}::jsonb, 'draft', ${author})
+        returning *`;
+      return this.mapInstr(rows[0] as never);
+    });
+  }
+
+  async publishDraftInstructions(note: string | null): Promise<InstructionVersion | null> {
+    return this.sql.begin(async (tx) => {
+      const draft = await tx`select * from instruction_versions where status = 'draft' limit 1`;
+      if (!draft[0]) return null;
+      // Archive the current live, then promote the draft.
+      await tx`update instruction_versions set status = 'archived' where status = 'live'`;
+      const rows = await tx`
+        update instruction_versions
+        set status = 'live', note = ${note}, published_at = now()
+        where id = ${(draft[0] as { id: string }).id}
+        returning *`;
+      return this.mapInstr(rows[0] as never);
+    });
+  }
+
+  async listInstructionVersions(): Promise<InstructionVersion[]> {
+    const rows = await this.sql`
+      select * from instruction_versions order by version desc`;
+    return rows.map((r) => this.mapInstr(r as never));
+  }
+
+  async restoreInstructionVersion(id: string, author: string | null): Promise<InstructionVersion | null> {
+    return this.sql.begin(async (tx) => {
+      const src = await tx`select steps from instruction_versions where id = ${id} limit 1`;
+      if (!src[0]) return null;
+      const steps = (src[0] as { steps: string[] }).steps;
+      const nextVer = await tx<{ v: number }[]>`
+        select coalesce(max(version), 0) + 1 as v from instruction_versions`;
+      await tx`delete from instruction_versions where status = 'draft'`;
+      const rows = await tx`
+        insert into instruction_versions (version, steps, status, author, note)
+        values (${nextVer[0]!.v}, ${tx.json(steps)}::jsonb, 'draft', ${author}, 'Restored from an earlier version')
+        returning *`;
+      return this.mapInstr(rows[0] as never);
+    });
   }
 }
