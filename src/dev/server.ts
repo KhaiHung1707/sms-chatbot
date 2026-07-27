@@ -64,6 +64,7 @@ const config = {
   PORT,
   LOG_LEVEL: 'info',
   NODE_ENV: 'development',
+  ADMIN_PASSWORD: process.env.ADMIN_PASSWORD, // set to enable /admin locally
 } satisfies Config;
 
 // --- Choose LLM: real Claude if a key is present, else the rule-based fake. ---
@@ -154,6 +155,11 @@ Full guide: <code>docs/local-testing.md</code>.</p>
 
 app.route('/', health);
 app.route('/', createWebhookRoute(config, pipeline));
+// Admin page — only mounts if ADMIN_PASSWORD is set (else routes 404).
+{
+  const { createAdminRoute } = await import('../routes/admin.js');
+  app.route('/', createAdminRoute(config, { store, llm, inventory, pipeline }));
+}
 
 const level = hasDb ? 3 : hasKey ? 2 : 1;
 

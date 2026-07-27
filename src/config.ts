@@ -28,6 +28,11 @@ const schema = z.object({
   PORT: z.coerce.number().int().positive().default(3000),
   LOG_LEVEL: z.string().default('info'),
   NODE_ENV: z.enum(['development', 'test', 'production']).default('development'),
+
+  // Shared password for the /admin instructions page. Optional so the local dev
+  // harness and tests boot without it (admin is then disabled); REQUIRED in
+  // production is enforced below.
+  ADMIN_PASSWORD: z.string().min(12).optional(),
 });
 
 export type Config = z.infer<typeof schema>;
@@ -42,6 +47,12 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
       .map((i) => `  - ${i.path.join('.')}: ${i.message}`)
       .join('\n');
     throw new Error(`Invalid environment configuration:\n${issues}`);
+  }
+  // The admin page must be password-protected in production.
+  if (parsed.data.NODE_ENV === 'production' && !parsed.data.ADMIN_PASSWORD) {
+    throw new Error(
+      'ADMIN_PASSWORD is required in production (min 12 chars) to protect the /admin page.',
+    );
   }
   cached = parsed.data;
   return cached;

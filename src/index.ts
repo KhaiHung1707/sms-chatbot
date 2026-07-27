@@ -4,6 +4,7 @@ import { loadConfig } from './config.js';
 import { logger } from './logger.js';
 import { health } from './routes/health.js';
 import { createWebhookRoute } from './routes/webhook.js';
+import { createAdminRoute } from './routes/admin.js';
 import { PgStore } from './db/pgStore.js';
 import { runMigrations } from './db/migrate.js';
 import { AnthropicClient } from './llm/claude.js';
@@ -33,6 +34,7 @@ const pipeline = new Pipeline({ store, llm, quo, inventory, config });
 const app = new Hono();
 app.route('/', health);
 app.route('/', createWebhookRoute(config, pipeline));
+app.route('/', createAdminRoute(config, { store, llm, inventory, pipeline }));
 
 // Bind 0.0.0.0 (not the default localhost) so the container platform's proxy /
 // health check (Koyeb, Fly, Render, etc.) can reach the server from outside.

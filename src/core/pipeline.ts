@@ -62,7 +62,7 @@ const ALLOWED_LINK_HOST = 'oaklandbodyparts.com';
  * competitor. This strips any http(s) URL whose host is not oaklandbodyparts.com
  * from an outbound reply, and tidies leftover "Order link:" labels.
  */
-function stripForeignLinks(text: string): string {
+export function stripForeignLinks(text: string): string {
   let stripped = text.replace(/https?:\/\/[^\s]+/gi, (url) => {
     try {
       const host = new URL(url).hostname.toLowerCase();
