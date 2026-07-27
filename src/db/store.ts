@@ -159,6 +159,25 @@ export interface Store {
    * reviews + publishes). Returns the new draft, or null if the id is unknown.
    */
   restoreInstructionVersion(id: string, author: string | null): Promise<InstructionVersion | null>;
+
+  // ── Dashboard stats (admin page) ────────────────────────────────────────────
+
+  /**
+   * Real operational stats for the admin dashboard, computed from existing rows
+   * (messages/conversations/holds) — NO separate stats table, NO hardcoded
+   * numbers. `now` is injected so it's testable.
+   */
+  getBotStats(now: Date): Promise<BotStats>;
+}
+
+/** Operational counts for the admin dashboard — all computed from live data. */
+export interface BotStats {
+  inboundToday: number; // customer messages received today (shop-day, UTC-based)
+  repliesToday: number; // bot replies sent today
+  handoffs7d: number; // conversations handed off to staff in the last 7 days
+  holds7d: number; // holds created in the last 7 days
+  /** Inbound message count per day for the last 7 days, oldest first (for a chart). */
+  inboundByDay: { date: string; count: number }[];
 }
 
 /** A stored version of the editable conversation-flow steps. */

@@ -1,5 +1,5 @@
 import { randomUUID } from 'node:crypto';
-import type { Store, InstructionVersion } from '../db/store.js';
+import type { Store, InstructionVersion, BotStats } from '../db/store.js';
 import type { Conversation, Customer, Message } from '../types.js';
 
 /**
@@ -290,5 +290,36 @@ export class MemoryStore implements Store {
     };
     this.instructionVersions.push(draft);
     return draft;
+  }
+
+  async getBotStats(now: Date): Promise<BotStats> {
+    const dayStart = new Date(now);
+    dayStart.setUTCHours(0, 0, 0, 0);
+    const weekAgo = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000);
+    const ts = (m: { created_at: string }) => new Date(m.created_at);
+
+    const inboundToday = this.messages.filter(
+      (m) => m.direction === 'in' && ts(m) >= dayStart,
+    ).length;
+    const repliesToday = this.messages.filter(
+      (m) => m.direction === 'out' && ts(m) >= dayStart,
+    ).length;
+    const handoffs7d = [...this.conversations.values()].filter(
+      (c) => c.status === 'handed_off' && new Date(c.created_at) >= weekAgo,
+    ).length;
+    const holds7d = this.holds.length; // in-memory holds have no created_at; count all
+
+    // Inbound per day, last 7 days.
+    const byDay = new Map<string, number>();
+    for (const m of this.messages) {
+      if (m.direction !== 'in' || ts(m) < weekAgo) continue;
+      const key = ts(m).toISOString().slice(0, 10);
+      byDay.set(key, (byDay.get(key) ?? 0) + 1);
+    }
+    const inboundByDay = [...byDay.entries()]
+      .sort((a, b) => (a[0] < b[0] ? -1 : 1))
+      .map(([date, count]) => ({ date, count }));
+
+    return { inboundToday, repliesToday, handoffs7d, holds7d, inboundByDay };
   }
 }

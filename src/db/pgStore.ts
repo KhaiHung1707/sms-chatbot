@@ -1,5 +1,5 @@
 import postgres from 'postgres';
-import type { Store, InstructionVersion } from './store.js';
+import type { Store, InstructionVersion, BotStats } from './store.js';
 import type { Conversation, Customer, Message } from '../types.js';
 
 /**
@@ -331,5 +331,43 @@ export class PgStore implements Store {
         returning *`;
       return this.mapInstr(rows[0] as never);
     });
+  }
+
+  // ── Dashboard stats (all from live rows — no stats table, no hardcoding) ─────
+
+  async getBotStats(now: Date): Promise<BotStats> {
+    const dayStart = new Date(now);
+    dayStart.setUTCHours(0, 0, 0, 0);
+    const weekAgo = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000);
+
+    const [inbToday, repToday, handoffs, holds, byDay] = await Promise.all([
+      this.sql<{ c: string }[]>`
+        select count(*)::text as c from messages
+        where direction = 'in' and created_at >= ${dayStart}`,
+      this.sql<{ c: string }[]>`
+        select count(*)::text as c from messages
+        where direction = 'out' and created_at >= ${dayStart}`,
+      this.sql<{ c: string }[]>`
+        select count(*)::text as c from conversations
+        where status = 'handed_off' and created_at >= ${weekAgo}`,
+      this.sql<{ c: string }[]>`
+        select count(*)::text as c from holds where created_at >= ${weekAgo}`,
+      this.sql<{ day: Date; c: string }[]>`
+        select date_trunc('day', created_at) as day, count(*)::text as c
+        from messages
+        where direction = 'in' and created_at >= ${weekAgo}
+        group by day order by day asc`,
+    ]);
+
+    return {
+      inboundToday: Number(inbToday[0]?.c ?? '0'),
+      repliesToday: Number(repToday[0]?.c ?? '0'),
+      handoffs7d: Number(handoffs[0]?.c ?? '0'),
+      holds7d: Number(holds[0]?.c ?? '0'),
+      inboundByDay: byDay.map((r) => ({
+        date: r.day.toISOString().slice(0, 10),
+        count: Number(r.c),
+      })),
+    };
   }
 }
