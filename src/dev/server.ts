@@ -64,6 +64,7 @@ const config = {
   PORT,
   LOG_LEVEL: 'info',
   NODE_ENV: 'development',
+  ADMIN_USERNAME: process.env.ADMIN_USERNAME ?? 'brandon',
   ADMIN_PASSWORD: process.env.ADMIN_PASSWORD, // set to enable /admin locally
 } satisfies Config;
 

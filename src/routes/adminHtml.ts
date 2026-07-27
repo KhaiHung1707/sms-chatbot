@@ -67,7 +67,8 @@ export function loginPage(error?: string): string {
   <p class="muted" style="margin:6px 0 16px">Staff only. Enter the password.</p>
   ${error ? `<p style="color:#b3403a;font-size:14px;margin-bottom:10px">${esc(error)}</p>` : ''}
   <form method="post" action="/admin/login">
-    <input type="password" name="password" placeholder="Password" autofocus required>
+    <input type="text" name="username" placeholder="Username" autocomplete="username" autofocus required>
+    <input type="password" name="password" placeholder="Password" autocomplete="current-password" style="margin-top:10px" required>
     <button class="primary" style="width:100%;margin-top:12px" type="submit">Log in</button>
   </form>
 </div></body></html>`;

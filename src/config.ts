@@ -29,9 +29,10 @@ const schema = z.object({
   LOG_LEVEL: z.string().default('info'),
   NODE_ENV: z.enum(['development', 'test', 'production']).default('development'),
 
-  // Shared password for the /admin instructions page. Optional so the local dev
-  // harness and tests boot without it (admin is then disabled); REQUIRED in
-  // production is enforced below.
+  // Credentials for the /admin instructions page. ADMIN_PASSWORD is optional so
+  // the local dev harness and tests boot without it (admin is then disabled);
+  // REQUIRED in production is enforced below. ADMIN_USERNAME defaults to 'brandon'.
+  ADMIN_USERNAME: z.string().min(1).default('brandon'),
   ADMIN_PASSWORD: z.string().min(12).optional(),
 });
 

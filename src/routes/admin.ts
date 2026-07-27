@@ -7,9 +7,10 @@ import type { Pipeline } from '../core/pipeline.js';
 import { logger } from '../logger.js';
 import {
   requireAuth,
-  checkPassword,
+  checkCredentials,
   setAuthCookie,
   clearAuthCookie,
+  type AdminCreds,
 } from '../admin/auth.js';
 import { validateSteps } from '../admin/steps.js';
 import { lintSteps } from '../llm/promptLint.js';
@@ -26,26 +27,29 @@ export function createAdminRoute(
   deps: { store: Store; llm: LlmClient; inventory: InventoryClient; pipeline: Pipeline },
 ): Hono {
   const app = new Hono();
-  const password = config.ADMIN_PASSWORD;
-
   // Admin disabled without a password (dev/tests) — every route 404s.
-  if (!password) {
+  if (!config.ADMIN_PASSWORD) {
     app.all('/admin/*', (c) => c.notFound());
     app.all('/admin', (c) => c.notFound());
     return app;
   }
+  const creds: AdminCreds = {
+    username: config.ADMIN_USERNAME,
+    password: config.ADMIN_PASSWORD,
+  };
 
   // ── Login (unguarded) ──────────────────────────────────────────────────────
   app.get('/admin/login', (c) => c.html(loginPage()));
 
   app.post('/admin/login', async (c) => {
     const body = await c.req.parseBody();
-    const input = typeof body.password === 'string' ? body.password : '';
-    if (checkPassword(input, password)) {
-      setAuthCookie(c, password);
+    const user = typeof body.username === 'string' ? body.username : '';
+    const pass = typeof body.password === 'string' ? body.password : '';
+    if (checkCredentials(user, pass, creds)) {
+      setAuthCookie(c, creds);
       return c.redirect('/admin');
     }
-    return c.html(loginPage('Wrong password, try again.'));
+    return c.html(loginPage('Wrong username or password, try again.'));
   });
 
   app.post('/admin/logout', (c) => {
@@ -54,12 +58,12 @@ export function createAdminRoute(
   });
 
   // ── Everything below requires auth ─────────────────────────────────────────
-  app.use('/admin', requireAuth(password));
-  app.use('/admin/steps', requireAuth(password));
-  app.use('/admin/preview', requireAuth(password));
-  app.use('/admin/lint', requireAuth(password));
-  app.use('/admin/publish', requireAuth(password));
-  app.use('/admin/rollback', requireAuth(password));
+  app.use('/admin', requireAuth(creds));
+  app.use('/admin/steps', requireAuth(creds));
+  app.use('/admin/preview', requireAuth(creds));
+  app.use('/admin/lint', requireAuth(creds));
+  app.use('/admin/publish', requireAuth(creds));
+  app.use('/admin/rollback', requireAuth(creds));
 
   app.get('/admin', async (c) => {
     const [live, draft, history, stats] = await Promise.all([
