@@ -122,8 +122,16 @@ export function editorPage(data: {
   <!-- STEPS -->
   <div class="card">
     <h2>How the bot helps customers</h2>
-    <p class="muted" style="margin-bottom:12px">Each step is a short instruction, in order.</p>
-    <div id="steps"></div>
+    <p class="muted" style="margin-bottom:10px">Each step is a short instruction to the bot, followed in order. Edit the wording to change how the bot talks to customers.</p>
+    <div class="warns" style="background:#eef1fb;border-color:#c9d4f5">
+      <b style="color:#2b46b8">Tips for safe edits</b>
+      <ul style="margin-top:6px;color:#3b4a6b;font-size:13.5px">
+        <li>Keep any specific numbers you see (like "80%" or "300 characters") — they control how sure the bot is before it answers and how long its replies are.</li>
+        <li>Keep the little examples (like "Accord bumper" → "What year…") — they teach the bot exactly what to do.</li>
+        <li>Not sure about a change? Use <b>Try it before you publish</b> below to see the bot's reply first.</li>
+      </ul>
+    </div>
+    <div id="steps" style="margin-top:12px"></div>
     <button class="small" onclick="addStep()">+ Add step</button>
     <div class="row" style="margin-top:14px;gap:10px">
       <button class="primary" onclick="saveDraft()">Save draft</button>
@@ -201,8 +209,14 @@ function render() {
       '<button class="small" onclick="move('+i+',1)">↓ Down</button> ' +
       '<button class="small danger" onclick="del('+i+')">Delete</button></span></div>';
     const ta = document.createElement('textarea');
-    ta.value = text; ta.oninput = () => { steps[i] = ta.value; };
-    d.appendChild(ta); box.appendChild(d);
+    ta.value = text;
+    ta.placeholder = 'Write a short instruction, e.g. "Greet the customer warmly and ask what part they need."';
+    const hint = document.createElement('div');
+    hint.className = 'muted'; hint.style.fontSize = '12.5px'; hint.style.marginTop = '4px';
+    const upd = () => { hint.textContent = ta.value.trim().length + ' characters'; };
+    ta.oninput = () => { steps[i] = ta.value; upd(); };
+    upd();
+    d.appendChild(ta); d.appendChild(hint); box.appendChild(d);
   });
 }
 function addStep(){ steps.push(''); render(); }

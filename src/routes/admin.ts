@@ -16,6 +16,7 @@ import { validateSteps } from '../admin/steps.js';
 import { lintSteps } from '../llm/promptLint.js';
 import { runPreview } from '../admin/preview.js';
 import { loginPage, editorPage } from './adminHtml.js';
+import { DEFAULT_INSTRUCTION_STEPS } from '../llm/systemPrompt.js';
 
 /**
  * /admin — the shop owner's page to edit the bot's conversation-flow steps.
@@ -66,12 +67,21 @@ export function createAdminRoute(
   app.use('/admin/rollback', requireAuth(creds));
 
   app.get('/admin', async (c) => {
-    const [live, draft, history, stats] = await Promise.all([
+    const [liveRaw, draft, history, stats] = await Promise.all([
       deps.store.getLiveInstructions(),
       deps.store.getDraftInstructions(),
       deps.store.listInstructionVersions(),
       deps.store.getBotStats(new Date()),
     ]);
+    // If nothing is seeded yet (e.g. dev MemoryStore), show the code defaults so
+    // the editor is never blank — this matches what the bot actually uses.
+    const live =
+      liveRaw ??
+      ({
+        id: 'default', version: 0, steps: [...DEFAULT_INSTRUCTION_STEPS],
+        status: 'live' as const, note: 'Default (not yet saved)', author: 'system',
+        createdAt: new Date().toISOString(), publishedAt: null,
+      });
     return c.html(editorPage({ live, draft, history, stats }));
   });
 
