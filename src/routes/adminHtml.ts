@@ -49,6 +49,12 @@ const CSS = `
   .bar { flex:1; background:#3b5bdb; border-radius:4px 4px 0 0; min-height:3px; }
   .bubble { background:#eef1fb; border-radius:12px; padding:11px 14px; white-space:pre-wrap; margin-top:10px; }
   .quiet { color:#6b7280; font-style:italic; }
+  .pvchat { margin-top:12px; display:flex; flex-direction:column; gap:8px; max-height:360px; overflow-y:auto; }
+  .pvchat:empty { display:none; }
+  .msg { max-width:80%; padding:9px 13px; border-radius:14px; white-space:pre-wrap; font-size:14.5px; }
+  .msg.cust { align-self:flex-end; background:#3b5bdb; color:#fff; border-bottom-right-radius:4px; }
+  .msg.bot { align-self:flex-start; background:#eef1fb; color:#1c2230; border-bottom-left-radius:4px; }
+  .msg.sys { align-self:center; background:transparent; color:#6b7280; font-style:italic; font-size:13px; }
   .modal-bg { position:fixed; inset:0; background:rgba(20,24,35,.45); display:none; align-items:center; justify-content:center; padding:20px; }
   .modal-bg.on { display:flex; }
   .modal { background:#fff; border-radius:14px; padding:22px; max-width:440px; width:100%; }
@@ -139,20 +145,23 @@ export function editorPage(data: {
     </div>
   </div>
 
-  <!-- PREVIEW -->
+  <!-- PREVIEW (multi-turn chat) -->
   <div class="card">
-    <h2>Try it before you publish</h2>
-    <p class="muted">Nothing is sent to any customer. Uses the steps above.</p>
+    <div class="row spread">
+      <h2>Try it before you publish</h2>
+      <button class="small" onclick="resetChat()">Start over</button>
+    </div>
+    <p class="muted">Have a full back-and-forth with the bot, just like a real customer. Nothing is sent to anyone — it uses the steps above.</p>
+    <div id="pvChat" class="pvchat"></div>
     <div class="row" style="margin-top:10px;gap:8px">
-      <input type="text" id="pvInput" placeholder="Type a customer message…">
-      <button class="primary" onclick="runPreview()">Run preview</button>
+      <input type="text" id="pvInput" placeholder="Type a customer message…" onkeydown="if(event.key==='Enter')runPreview()">
+      <button class="primary" onclick="runPreview()">Send</button>
     </div>
     <div class="chips">
       ${['95 Accord front bumper', 'GM1000683', 'civic bumper', 'what time do you open saturday?']
         .map((t) => `<button onclick="pick(this)">${esc(t)}</button>`)
         .join('')}
     </div>
-    <div id="pvOut"></div>
   </div>
 
   <!-- PUBLISH -->
@@ -222,7 +231,17 @@ function render() {
 function addStep(){ steps.push(''); render(); }
 function del(i){ if(confirm('Delete this step?')){ steps.splice(i,1); render(); } }
 function move(i,dir){ const j=i+dir; if(j<0||j>=steps.length) return; [steps[i],steps[j]]=[steps[j],steps[i]]; render(); }
-function pick(b){ document.getElementById('pvInput').value = b.textContent; }
+let chat = []; // preview conversation: [{who:'customer'|'bot', text}]
+function pick(b){ document.getElementById('pvInput').value = b.textContent; runPreview(); }
+function resetChat(){ chat = []; renderChat(); }
+function renderChat(){
+  const box = document.getElementById('pvChat');
+  box.innerHTML = chat.map(m => {
+    if(m.who==='system') return '<div class="msg sys">'+escapeHtml(m.text)+'</div>';
+    return '<div class="msg '+(m.who==='customer'?'cust':'bot')+'">'+escapeHtml(m.text)+'</div>';
+  }).join('');
+  box.scrollTop = box.scrollHeight;
+}
 
 async function saveDraft(){
   const msg = document.getElementById('saveMsg');
@@ -233,14 +252,21 @@ async function saveDraft(){
   msg.textContent = 'Saved.'; document.getElementById('banner').style.display='block';
 }
 async function runPreview(){
-  const message = document.getElementById('pvInput').value.trim();
+  const input = document.getElementById('pvInput');
+  const message = input.value.trim();
   if(!message) return;
-  const out = document.getElementById('pvOut');
-  out.innerHTML = '<div class="bubble quiet">Running…</div>';
-  const r = await fetch('/admin/preview',{method:'POST',headers:{'content-type':'application/json','accept':'application/json'},body:JSON.stringify({steps,message})});
+  // Show the customer message; history is everything BEFORE this one.
+  const history = chat.filter(m => m.who !== 'system');
+  chat.push({who:'customer', text:message});
+  input.value = '';
+  chat.push({who:'system', text:'…'});
+  renderChat();
+  const r = await fetch('/admin/preview',{method:'POST',headers:{'content-type':'application/json','accept':'application/json'},body:JSON.stringify({steps,message,history})});
   const j = await r.json();
-  if(j.silent){ out.innerHTML = '<div class="bubble quiet">Bot stayed quiet (a staff member would handle this).</div>'; }
-  else { out.innerHTML = '<div class="muted" style="margin-top:8px">Bot would reply:</div><div class="bubble">'+escapeHtml(j.reply)+'</div>'; }
+  chat.pop(); // remove the "…" placeholder
+  if(j.silent){ chat.push({who:'system', text:'Bot stayed quiet — a staff member would handle this.'}); }
+  else { chat.push({who:'bot', text:j.reply}); }
+  renderChat();
 }
 function escapeHtml(s){ const d=document.createElement('div'); d.textContent=s; return d.innerHTML; }
 

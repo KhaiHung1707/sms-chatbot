@@ -100,10 +100,28 @@ export function createAdminRoute(
   });
 
   app.post('/admin/preview', async (c) => {
-    const body = (await c.req.json().catch(() => ({}))) as { steps?: unknown; message?: unknown };
+    const body = (await c.req.json().catch(() => ({}))) as {
+      steps?: unknown;
+      message?: unknown;
+      history?: unknown;
+    };
     const v = validateSteps(body.steps);
     const message = typeof body.message === 'string' ? body.message.slice(0, 500) : '';
     if (!message.trim()) return c.json({ reply: '', silent: true });
+    // Sanitize the conversation history (cap length so a huge payload can't abuse
+    // the LLM call). Each turn is {who: customer|bot, text}.
+    const history = Array.isArray(body.history)
+      ? body.history
+          .slice(-20)
+          .filter(
+            (t): t is { who: 'customer' | 'bot'; text: string } =>
+              !!t &&
+              typeof (t as { text?: unknown }).text === 'string' &&
+              ((t as { who?: unknown }).who === 'customer' ||
+                (t as { who?: unknown }).who === 'bot'),
+          )
+          .map((t) => ({ who: t.who, text: t.text.slice(0, 500) }))
+      : [];
     try {
       const result = await runPreview({
         llm: deps.llm,
@@ -111,6 +129,7 @@ export function createAdminRoute(
         config,
         steps: v.steps,
         message,
+        history,
       });
       return c.json(result);
     } catch (err) {

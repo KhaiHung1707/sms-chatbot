@@ -27,14 +27,22 @@ export interface PreviewResult {
   silent: boolean;
 }
 
+/** A single prior turn in the preview conversation. */
+export interface PreviewTurn {
+  who: 'customer' | 'bot';
+  text: string;
+}
+
 export async function runPreview(opts: {
   llm: LlmClient;
   inventory: InventoryClient;
   config: Config;
   steps: string[];
   message: string;
+  /** Prior turns of THIS preview conversation, oldest first (optional). */
+  history?: PreviewTurn[];
 }): Promise<PreviewResult> {
-  const { llm, inventory, config, steps, message } = opts;
+  const { llm, inventory, config, steps, message, history = [] } = opts;
 
   const system = buildSystemPrompt({
     shopAddress: config.SHOP_ADDRESS,
@@ -69,9 +77,19 @@ export async function runPreview(opts: {
     return JSON.stringify({ error: 'unknown_tool' });
   };
 
+  // Build the conversation: prior turns (customer→user, bot→assistant) + the new
+  // customer message. Mirrors how the real pipeline maps stored messages.
+  const messages = [
+    ...history.map((t) => ({
+      role: (t.who === 'customer' ? 'user' : 'assistant') as 'user' | 'assistant',
+      content: t.text,
+    })),
+    { role: 'user' as const, content: message },
+  ];
+
   let reply = '';
   try {
-    const result = await llm.runTurn(system, [{ role: 'user', content: message }], executeTool);
+    const result = await llm.runTurn(system, messages, executeTool);
     reply = result.reply.trim();
   } catch {
     return { reply: '', silent: true };
