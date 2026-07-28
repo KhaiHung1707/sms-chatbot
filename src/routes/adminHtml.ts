@@ -52,9 +52,14 @@ const CSS = `
   .pvchat { margin-top:12px; display:flex; flex-direction:column; gap:8px; max-height:360px; overflow-y:auto; }
   .pvchat:empty { display:none; }
   .msg { max-width:80%; padding:9px 13px; border-radius:14px; white-space:pre-wrap; font-size:14.5px; }
-  .msg.cust { align-self:flex-end; background:#3b5bdb; color:#fff; border-bottom-right-radius:4px; }
-  .msg.bot { align-self:flex-start; background:#eef1fb; color:#1c2230; border-bottom-left-radius:4px; }
+  .msg.cust { background:#3b5bdb; color:#fff; border-bottom-right-radius:4px; }
+  .msg.bot { background:#eef1fb; color:#1c2230; border-bottom-left-radius:4px; }
   .msg.sys { align-self:center; background:transparent; color:#6b7280; font-style:italic; font-size:13px; }
+  .msgwrap { display:flex; flex-direction:column; max-width:80%; }
+  .msgwrap.cust { align-self:flex-end; align-items:flex-end; }
+  .msgwrap.bot { align-self:flex-start; align-items:flex-start; }
+  .msgwrap .msg { max-width:100%; }
+  .msglabel { font-size:11px; color:#9aa1ac; margin:2px 4px 0; }
   .modal-bg { position:fixed; inset:0; background:rgba(20,24,35,.45); display:none; align-items:center; justify-content:center; padding:20px; }
   .modal-bg.on { display:flex; }
   .modal { background:#fff; border-radius:14px; padding:22px; max-width:440px; width:100%; }
@@ -151,11 +156,11 @@ export function editorPage(data: {
       <h2>Try it before you publish</h2>
       <button class="small" onclick="resetChat()">Start over</button>
     </div>
-    <p class="muted">Have a full back-and-forth with the bot, just like a real customer. Nothing is sent to anyone — it uses the steps above.</p>
+    <p class="muted">Have a full back-and-forth with the bot, just like a real customer. Nothing is sent to any customer — it uses the draft steps in the editor above.</p>
     <div id="pvChat" class="pvchat"></div>
     <div class="row" style="margin-top:10px;gap:8px">
       <input type="text" id="pvInput" placeholder="Type a customer message…" onkeydown="if(event.key==='Enter')runPreview()">
-      <button class="primary" onclick="runPreview()">Send</button>
+      <button class="primary" onclick="runPreview()">Run preview</button>
     </div>
     <div class="chips">
       ${['95 Accord front bumper', 'GM1000683', 'civic bumper', 'what time do you open saturday?']
@@ -238,7 +243,8 @@ function renderChat(){
   const box = document.getElementById('pvChat');
   box.innerHTML = chat.map(m => {
     if(m.who==='system') return '<div class="msg sys">'+escapeHtml(m.text)+'</div>';
-    return '<div class="msg '+(m.who==='customer'?'cust':'bot')+'">'+escapeHtml(m.text)+'</div>';
+    if(m.who==='bot') return '<div class="msgwrap bot"><div class="msg bot">'+escapeHtml(m.text)+'</div><div class="msglabel">Answered by the bot</div></div>';
+    return '<div class="msgwrap cust"><div class="msg cust">'+escapeHtml(m.text)+'</div><div class="msglabel">You (as the customer)</div></div>';
   }).join('');
   box.scrollTop = box.scrollHeight;
 }
