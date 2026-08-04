@@ -171,16 +171,32 @@ export function editorPage(data: {
       </div>
     </details>
     <details class="note">
-      <summary>Where the reply goes, and what a product reply looks like</summary>
+      <summary>Where the reply goes, and what a product reply looks like (with Features)</summary>
       <div class="note-body">
         <p>The bot's reply is sent to the customer as a normal <b>text message (SMS)</b> on their phone — the same way you'd text them back. It does not appear on any web page for the customer; it lands in their messages. You can see the full back-and-forth in your Quo (OpenPhone) inbox.</p>
-        <p>When the bot quotes a found part, the customer receives a text like this:</p>
+        <p>When the customer gives a <b>vehicle</b> (year, make, model + part), the bot replies like this:</p>
         <pre class="reply-sample">FRONT BUMPER COVER
 Current price is: $64.08
 SKU: HO1000123
 FITS 2015 Honda Accord
 Order link: https://oaklandbodyparts.com/…</pre>
-        <p class="muted">The <b>Preview</b> below shows exactly this — but nothing is ever sent to a customer from here. It's only a test.</p>
+        <p>When the customer gives a <b>part number (SKU)</b>, the bot replies with more detail, including a <b>Features</b> list (the ✓ highlights) and every vehicle it <b>Fits</b>:</p>
+        <pre class="reply-sample">FRONT BUMPER COVER
+SKU: HO1000123
+Price: $64.08
+Status: In Stock
+
+Features:
+✓ Primed, ready to paint
+✓ Direct OEM-style fit
+
+Fits:
+2013–2015 Honda Accord
+
+Order:
+https://oaklandbodyparts.com/…</pre>
+        <p class="muted">Everything — price, features, and the fits list — comes straight from the catalog; the bot never makes it up. These reply formats are built in and always applied, so they stay consistent for every customer.</p>
+        <p class="muted">The <b>Preview</b> below shows exactly these — but nothing is ever sent to a customer from here. It's only a test.</p>
       </div>
     </details>
     <div class="warns" style="background:#eef1fb;border-color:#c9d4f5">
