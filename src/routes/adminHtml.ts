@@ -37,6 +37,13 @@ const CSS = `
   .step .num { font-weight:700; color:#3b5bdb; }
   .banner { background:#fff7e0; border:1px solid #f0e0b0; color:#8a6a12; border-radius:10px; padding:11px 14px; margin-bottom:16px; font-weight:600; font-size:14.5px; }
   .warns { background:#fff7e0; border:1px solid #f0e0b0; border-radius:10px; padding:12px 14px; margin:10px 0; }
+  .note { border:1px solid #e4e7ee; border-radius:10px; margin:10px 0; background:#fafbfc; }
+  .note summary { cursor:pointer; padding:11px 14px; font-weight:600; font-size:14px; color:#3b5bdb; list-style:none; }
+  .note summary::-webkit-details-marker { display:none; }
+  .note summary::before { content:"ⓘ "; }
+  .note[open] summary { border-bottom:1px solid #eef0f4; }
+  .note-body { padding:12px 16px; font-size:14px; color:#3a4150; }
+  .note-body p { margin:8px 0; } .note-body ul { margin:6px 0 10px 20px; } .note-body li { margin:3px 0; }
   .warns li { margin-left:18px; color:#8a6a12; font-size:14px; }
   .chip { display:inline-block; font-size:12px; font-weight:700; padding:2px 9px; border-radius:99px; }
   .live { background:#e7f6ec; color:#1f7a45; } .draftchip { background:#eef1fb; color:#3b5bdb; }
@@ -143,6 +150,25 @@ export function editorPage(data: {
   <div class="card">
     <h2>How the bot helps customers</h2>
     <p class="muted" style="margin-bottom:10px">Each step is a short instruction to the bot, followed in order. Edit the wording to change how the bot talks to customers.</p>
+    <details class="note">
+      <summary>How the bot finds a part (the words it uses)</summary>
+      <div class="note-body">
+        <p>To find a part, the bot needs four things from the customer:</p>
+        <ul>
+          <li><b>Year</b> — e.g. 2015</li>
+          <li><b>Make</b> — the brand, e.g. Honda</li>
+          <li><b>Model</b> — e.g. Accord</li>
+          <li><b>Part</b> — what they need, e.g. front bumper, headlight, side mirror</li>
+        </ul>
+        <p>If any of these is missing, the steps below tell the bot to ask for it. Once it has all four, it looks up the catalog and shows the matching product.</p>
+        <p>When it finds a product, the reply can also include:</p>
+        <ul>
+          <li><b>Features</b> — the product's highlights (the ✓ bullet points)</li>
+          <li><b>Fits</b> — the years and vehicles that part fits (its "fitment")</li>
+        </ul>
+        <p class="muted">These come straight from the catalog — the bot never makes them up.</p>
+      </div>
+    </details>
     <div class="warns" style="background:#eef1fb;border-color:#c9d4f5">
       <b style="color:#2b46b8">Tips for safe edits</b>
       <ul style="margin-top:6px;color:#3b4a6b;font-size:13.5px">
