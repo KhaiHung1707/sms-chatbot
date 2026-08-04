@@ -44,6 +44,7 @@ const CSS = `
   .note[open] summary { border-bottom:1px solid #eef0f4; }
   .note-body { padding:12px 16px; font-size:14px; color:#3a4150; }
   .note-body p { margin:8px 0; } .note-body ul { margin:6px 0 10px 20px; } .note-body li { margin:3px 0; }
+  .reply-sample { background:#eef1fb; border:1px solid #dbe1f5; border-radius:10px; padding:11px 13px; margin:8px 0; font:13px/1.5 ui-monospace,Menlo,Consolas,monospace; color:#1c2230; white-space:pre-wrap; overflow-x:auto; }
   .warns li { margin-left:18px; color:#8a6a12; font-size:14px; }
   .chip { display:inline-block; font-size:12px; font-weight:700; padding:2px 9px; border-radius:99px; }
   .live { background:#e7f6ec; color:#1f7a45; } .draftchip { background:#eef1fb; color:#3b5bdb; }
@@ -167,6 +168,19 @@ export function editorPage(data: {
           <li><b>Fits</b> — the years and vehicles that part fits (its "fitment")</li>
         </ul>
         <p class="muted">These come straight from the catalog — the bot never makes them up.</p>
+      </div>
+    </details>
+    <details class="note">
+      <summary>Where the reply goes, and what a product reply looks like</summary>
+      <div class="note-body">
+        <p>The bot's reply is sent to the customer as a normal <b>text message (SMS)</b> on their phone — the same way you'd text them back. It does not appear on any web page for the customer; it lands in their messages. You can see the full back-and-forth in your Quo (OpenPhone) inbox.</p>
+        <p>When the bot quotes a found part, the customer receives a text like this:</p>
+        <pre class="reply-sample">FRONT BUMPER COVER
+Current price is: $64.08
+SKU: HO1000123
+FITS 2015 Honda Accord
+Order link: https://oaklandbodyparts.com/…</pre>
+        <p class="muted">The <b>Preview</b> below shows exactly this — but nothing is ever sent to a customer from here. It's only a test.</p>
       </div>
     </details>
     <div class="warns" style="background:#eef1fb;border-color:#c9d4f5">
