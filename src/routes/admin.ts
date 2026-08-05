@@ -134,7 +134,7 @@ export function createAdminRoute(
       return c.json(result);
     } catch (err) {
       logger.error({ err }, 'admin preview failed');
-      return c.json({ reply: '', silent: true });
+      return c.json({ reply: '', silent: false, error: true });
     }
   });
 

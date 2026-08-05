@@ -346,7 +346,8 @@ async function runPreview(){
   const r = await fetch('/admin/preview',{method:'POST',headers:{'content-type':'application/json','accept':'application/json'},body:JSON.stringify({steps,message,history})});
   const j = await r.json();
   chat.pop(); // remove the typing indicator
-  if(j.silent){ chat.push({who:'system', text:'Bot stayed quiet — a staff member would handle this.'}); }
+  if(j.error){ chat.push({who:'system', text:'⚠️ Couldn\'t reach the bot right now (a system error). This is not about your steps — try again in a moment, or check the service.'}); }
+  else if(j.silent){ chat.push({who:'system', text:'Bot stayed quiet — a staff member would handle this.'}); }
   else { chat.push({who:'bot', text:j.reply}); }
   renderChat();
 }

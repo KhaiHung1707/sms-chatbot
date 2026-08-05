@@ -1,3 +1,4 @@
+import { logger } from '../logger.js';
 import { buildSystemPrompt } from '../llm/systemPrompt.js';
 import { stripForeignLinks } from '../core/pipeline.js';
 import {
@@ -25,6 +26,9 @@ import type { Config } from '../config.js';
 export interface PreviewResult {
   reply: string;
   silent: boolean;
+  /** True when the LLM call itself failed (API down/out of credit) — not a real
+   * bot silence. Lets the UI show a system-error message instead of "stayed quiet". */
+  error?: boolean;
 }
 
 /** A single prior turn in the preview conversation. */
@@ -91,8 +95,12 @@ export async function runPreview(opts: {
   try {
     const result = await llm.runTurn(system, messages, executeTool);
     reply = result.reply.trim();
-  } catch {
-    return { reply: '', silent: true };
+  } catch (err) {
+    // A real error (e.g. Anthropic API down or out of credit) is NOT the same as
+    // the bot choosing to stay silent — surface it so the owner isn't misled into
+    // thinking their steps caused a handoff.
+    logger.error({ err }, 'admin preview: LLM call failed');
+    return { reply: '', silent: false, error: true };
   }
 
   const safe = stripForeignLinks(reply);
