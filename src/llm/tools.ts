@@ -209,6 +209,9 @@ async function enrichItem(item: InventoryItem, activeHoldQty: ActiveHoldLookup) 
     title: item.title,
     price: item.price,
     variants: item.variants,
+    // Feature bullets — now returned by /parts/search too (plugin v1.2.0), so
+    // every quote can include a Features list. Empty array when the product has none.
+    features: item.features,
     permalink: item.permalink,
     effective_qty: effectiveQty,
     availability: band,
