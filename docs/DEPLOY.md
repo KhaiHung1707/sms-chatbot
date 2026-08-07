@@ -119,6 +119,7 @@ curl -s -H "X-OBP-Api-Key: <KEY>" \
 | Ngày | Thay đổi | Cần khi cập nhật |
 |---|---|---|
 | 2026-08 | Bot: trang /admin | Thêm `ADMIN_USERNAME` + `ADMIN_PASSWORD` vào .env |
+| 2026-08 | Plugin v1.2.1: synonym "front/rear bumper cover\|assembly" | Upload plugin. **Không rebuild.** |
 | 2026-08 | Plugin v1.2.0: search trả `features[]` | Upload plugin. **Không rebuild.** |
 | 2026-08 | Plugin v1.1.0: part-match (headlight/grill/side mirror) | Upload plugin + **REBUILD.** |
 | 2026-08 | Bot: rule không đoán variant + liệt kê SP trùng + quote có Features | Deploy bot (git pull + rebuild container) |
